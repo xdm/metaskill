@@ -1,0 +1,37 @@
+version: 1
+classifier:
+  llm: auto          # auto | off | always
+  model: claude-haiku-4-5
+  trivial_max_chars: 40
+
+trust:
+  allowlist:         # auto-install and auto-update
+    - anthropics
+    - vercel-labs
+  auto_threshold:
+    min_installs: 5000
+    require_clean_scan: true
+  deny_publishers: []
+
+scan:                # forbidden outside the allowlist
+  deny_if_contains:
+    - hooks/
+    - .mcp.json
+    - "curl "
+    - "wget "
+    - "eval("
+    - "process.env"
+    - "os.environ"
+  max_archive_kb: 2048
+
+domains: {}          # manual overrides: domain -> skill
+                     # e.g. scraping: mycompany/skills@crawler
+
+custom_domains: []   # extend the taxonomy without forking, e.g.
+                     # - id: wordpress
+                     #   keywords: [wordpress, woocommerce, elementor]
+                     #   query: wordpress
+
+log:
+  path: ~/.metaskill/log.jsonl
+  retention_days: 90

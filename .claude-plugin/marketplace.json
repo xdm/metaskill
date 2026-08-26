@@ -1,0 +1,28 @@
+{
+  "name": "metaskill",
+  "owner": {
+    "name": "xdm",
+    "url": "https://github.com/xdm"
+  },
+  "description": "metaskill: Claude Code finds, vets and installs the skills each task needs.",
+  "plugins": [
+    {
+      "name": "metaskill",
+      "displayName": "metaskill",
+      "description": "Finds, vets and installs the skills each task needs, before Claude answers.",
+      "source": {
+        "source": "npm",
+        "package": "@xdma/metaskill"
+      },
+      "homepage": "https://github.com/xdm/metaskill",
+      "repository": "https://github.com/xdm/metaskill",
+      "license": "MIT",
+      "keywords": [
+        "skills",
+        "automation",
+        "registry",
+        "hooks"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "name": "metaskill",
+  "displayName": "metaskill",
+  "version": "0.4.0",
+  "description": "Finds, vets and installs the skills each task needs, before Claude answers.",
+  "author": {
+    "name": "xdm"
+  },
+  "homepage": "https://github.com/xdm/metaskill",
+  "repository": "https://github.com/xdm/metaskill",
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "automation",
+    "registry",
+    "hooks"
+  ]
+}

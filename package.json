@@ -1,0 +1,47 @@
+{
+  "name": "@xdma/metaskill",
+  "version": "0.4.0",
+  "description": "Claude Code decides which skills a task needs, installs them safely from skills.sh under a trust policy, then solves the task.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "metaskill": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "commands",
+    "hooks",
+    "templates",
+    ".claude-plugin",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": "github:xdm/metaskill",
+  "homepage": "https://metaskill.dev",
+  "keywords": [
+    "claude-code",
+    "skills",
+    "agent-skills",
+    "hooks",
+    "skills.sh"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit && node scripts/build.mjs",
+    "prepublishOnly": "npm run build && vitest run",
+    "test": "npm run build && vitest run",
+    "test:unit": "vitest run --exclude test/integration.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "yaml": "^2.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}
