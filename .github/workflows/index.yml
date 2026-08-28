@@ -40,10 +40,73 @@ jobs:
               const k = m ? m[1] : f.split(":")[0];
               byPattern[k] = (byPattern[k] || 0) + 1;
             }
+            // Root-level skills scan the whole repository, not a skill directory,
+            // so folding them into byPattern would measure repo layout instead of
+            // deny_if_contains quality. Reported as a share of dirty, not removed
+            // from it — the dirty computation itself is unchanged.
+            const dirtyAtRoot = dirty.filter(s => s.atRepoRoot).length;
+            // Under 20 chars catches empty too (0 < 20); this is the number that
+            // will reveal whether the frontmatter reader is dropping multi-line
+            // descriptions rather than a genuinely undocumented skill.
+            const thinDescription = i.skills.filter(s => s.description.length < 20).length;
             console.log("skills:", i.skillCount, "repos:", i.repoCount);
             console.log("estimated:", i.skills.filter(s => s.estimated).length);
             console.log("dirty:", dirty.length, JSON.stringify(byPattern));
+            console.log("dirty at repo root:", dirtyAtRoot, "of", dirty.length, "(whole-repo scans, not skill-scoped)");
+            console.log("thin description (<20 chars):", thinDescription);
           ' >> "$GITHUB_STEP_SUMMARY"
+
+      # A degraded build must never overwrite the live asset: gh release upload
+      # --clobber replaces it unconditionally, and the consumer's lookup is text
+      # search over description + name, so an index full of empty descriptions
+      # makes every lookup fail until tomorrow's run. This fails the job closed,
+      # the way the build already fails closed on a hard error — this is its
+      # soft-error counterpart, since skillCount alone cannot tell the two apart.
+      - name: Gate the publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download index-latest --pattern index.json --dir previous --clobber \
+            || echo "no published index-latest release available — skipping the count-regression gate"
+
+          node -e '
+            const fs = require("fs");
+            // Named, not inline, because each is a promise to the consumer rather
+            // than a tuning knob: cross either line and lookup silently breaks
+            // until the next nightly run overwrites this one.
+            const MIN_DESCRIPTION_SHARE = 0.5; // below this, text search fails for about half the registry
+            const MIN_COUNT_RATIO = 0.8;       // below this, the sweep or the archive pass likely broke, not just churned
+
+            const cur = JSON.parse(fs.readFileSync("index.json", "utf8"));
+            const withDescription = cur.skills.filter(s => s.description.length > 0).length;
+            const share = cur.skills.length ? withDescription / cur.skills.length : 0;
+
+            const failures = [];
+            if (share < MIN_DESCRIPTION_SHARE) {
+              failures.push(
+                `description share ${(share * 100).toFixed(1)}% < ${MIN_DESCRIPTION_SHARE * 100}% (${withDescription}/${cur.skills.length} records)`,
+              );
+            }
+
+            if (fs.existsSync("previous/index.json")) {
+              const prev = JSON.parse(fs.readFileSync("previous/index.json", "utf8"));
+              const ratio = prev.skillCount ? cur.skillCount / prev.skillCount : 1;
+              if (ratio < MIN_COUNT_RATIO) {
+                failures.push(
+                  `skillCount ${cur.skillCount} is ${(ratio * 100).toFixed(1)}% of the published ${prev.skillCount} (< ${MIN_COUNT_RATIO * 100}%)`,
+                );
+              }
+            } else {
+              console.log("no previous published index found — skipping the count-regression gate");
+            }
+
+            if (failures.length) {
+              console.error("publish gate failed:");
+              for (const f of failures) console.error(" -", f);
+              process.exit(1);
+            }
+            console.log("publish gate passed: description share", (share * 100).toFixed(1) + "%,", "skillCount", cur.skillCount);
+          '
 
       - name: Publish as a rolling release asset
         env:
