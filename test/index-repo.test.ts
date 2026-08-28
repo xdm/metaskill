@@ -141,6 +141,32 @@ describe("fetchSkillsViaTree", () => {
     expect(out.find((s) => s.name === "other")!.rel).toBe("skills/other");
   });
 
+  it("matches SKILL.md by basename, not by any path ending in the string \"SKILL.md\"", async () => {
+    const rawCalls: string[] = [];
+    const fetchImpl = (async (url: string) => {
+      const u = String(url);
+      if (u.includes("/git/trees/")) {
+        return {
+          ok: true,
+          json: async () => ({
+            truncated: false,
+            tree: [{ path: "docs/NOT_A_SKILL.md" }, { path: "skills/real/SKILL.md" }],
+          }),
+        } as unknown as Response;
+      }
+      rawCalls.push(u);
+      const name = u.includes("NOT_A_SKILL") ? "decoy" : "real";
+      return {
+        ok: true,
+        text: async () => `---\nname: ${name}\ndescription: about ${name}\n---\n`,
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    const out = await fetchSkillsViaTree("owner/repo", { fetchImpl });
+    expect(out.map((s) => s.name)).toEqual(["real"]);
+    expect(rawCalls.some((u) => u.includes("NOT_A_SKILL"))).toBe(false);
+  });
+
   it("returns [] when the tree call fails", async () => {
     const fetchImpl = (async () => ({ ok: false, status: 404 })) as unknown as typeof fetch;
     expect(await fetchSkillsViaTree("o/gone", { fetchImpl })).toEqual([]);

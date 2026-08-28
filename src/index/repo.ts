@@ -151,7 +151,9 @@ export async function fetchSkillsViaTree(
     const d = (await res.json()) as { tree?: { path?: unknown }[] };
     paths = (d.tree ?? [])
       .map((t) => (typeof t.path === "string" ? t.path : ""))
-      .filter((p) => p.endsWith("SKILL.md"));
+      // Basename match, not suffix: "docs/NOT_A_SKILL.md" ends with "SKILL.md"
+      // and would otherwise be indexed as a skill under a truncated path.
+      .filter((p) => p === "SKILL.md" || p.endsWith("/SKILL.md"));
   } catch {
     return [];
   }
