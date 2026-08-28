@@ -33,7 +33,7 @@ export interface ScanOpts {
   maxDownloadBytes?: number;
 }
 
-function* walk(dir: string, base = dir): Generator<{ abs: string; rel: string; isDir: boolean }> {
+export function* walkDir(dir: string, base = dir): Generator<{ abs: string; rel: string; isDir: boolean }> {
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -46,7 +46,7 @@ function* walk(dir: string, base = dir): Generator<{ abs: string; rel: string; i
     if (e.isSymbolicLink()) continue; // never follow links out of the archive
     if (e.isDirectory()) {
       yield { abs, rel, isDir: true };
-      yield* walk(abs, base);
+      yield* walkDir(abs, base);
     } else if (e.isFile()) {
       yield { abs, rel, isDir: false };
     }
@@ -56,7 +56,7 @@ function* walk(dir: string, base = dir): Generator<{ abs: string; rel: string; i
 function findSkillDir(root: string, skill: string): string | null {
   const target = skill.toLowerCase();
   const byFrontmatter: string[] = [];
-  for (const e of walk(root)) {
+  for (const e of walkDir(root)) {
     if (e.isDir && path.basename(e.abs).toLowerCase() === target) {
       if (fs.existsSync(path.join(e.abs, "SKILL.md"))) return e.abs;
     }
@@ -74,6 +74,47 @@ function findSkillDir(root: string, skill: string): string | null {
 
 function looksBinary(buf: Buffer): boolean {
   return buf.subarray(0, 1024).includes(0);
+}
+
+// The pattern rules, applied to a directory already on disk. Shared with the
+// CI indexer so the runtime scan and the indexed verdict can never disagree.
+export function scanDirectory(dir: string, scanPolicy: Policy["scan"]): ScanResult {
+  const findings: string[] = [];
+  const pathPatterns = scanPolicy.denyIfContains.filter((p) => p.endsWith("/"));
+  const namePatterns = scanPolicy.denyIfContains.filter((p) => !p.endsWith("/") && p.startsWith("."));
+  const contentPatterns = scanPolicy.denyIfContains.filter((p) => !p.endsWith("/") && !p.startsWith("."));
+
+  let sizeBytes = 0;
+  for (const e of walkDir(dir)) {
+    const relPosix = e.rel.split(path.sep).join("/");
+    if (e.isDir) {
+      for (const p of pathPatterns) {
+        if (`${relPosix}/`.includes(p)) findings.push(`forbidden path: ${relPosix}/ matches "${p}"`);
+      }
+      continue;
+    }
+    sizeBytes += fs.statSync(e.abs).size;
+    for (const p of namePatterns) {
+      if (path.basename(e.abs) === p) findings.push(`forbidden file: ${relPosix}`);
+    }
+    if (contentPatterns.length && fs.statSync(e.abs).size <= MAX_CONTENT_SCAN_BYTES) {
+      const buf = fs.readFileSync(e.abs);
+      if (!looksBinary(buf)) {
+        const text = buf.toString("utf8");
+        for (const p of contentPatterns) {
+          if (text.includes(p)) findings.push(`"${p}" found in ${relPosix}`);
+        }
+      }
+    }
+  }
+
+  if (sizeBytes > scanPolicy.maxArchiveKb * 1024) {
+    findings.push(
+      `skill directory ${Math.round(sizeBytes / 1024)} KB exceeds max_archive_kb ${scanPolicy.maxArchiveKb}`,
+    );
+  }
+
+  return findings.length ? { status: "dirty", findings } : { status: "clean", findings: [] };
 }
 
 // Static scan of the skill's directory inside the repo tarball, BEFORE any
@@ -114,40 +155,7 @@ export async function scanCandidate(c: Candidate, policy: Policy, opts: ScanOpts
     const skillDir = findSkillDir(extractDir, parsed.skill);
     if (!skillDir) return { status: "unavailable", findings: [`skill "${parsed.skill}" not found in archive`] };
 
-    const findings: string[] = [];
-    const pathPatterns = policy.scan.denyIfContains.filter((p) => p.endsWith("/"));
-    const namePatterns = policy.scan.denyIfContains.filter((p) => !p.endsWith("/") && p.startsWith("."));
-    const contentPatterns = policy.scan.denyIfContains.filter((p) => !p.endsWith("/") && !p.startsWith("."));
-
-    let sizeBytes = 0;
-    for (const e of walk(skillDir)) {
-      const relPosix = e.rel.split(path.sep).join("/");
-      if (e.isDir) {
-        for (const p of pathPatterns) {
-          if (`${relPosix}/`.includes(p)) findings.push(`forbidden path: ${relPosix}/ matches "${p}"`);
-        }
-        continue;
-      }
-      sizeBytes += fs.statSync(e.abs).size;
-      for (const p of namePatterns) {
-        if (path.basename(e.abs) === p) findings.push(`forbidden file: ${relPosix}`);
-      }
-      if (contentPatterns.length && fs.statSync(e.abs).size <= MAX_CONTENT_SCAN_BYTES) {
-        const buf = fs.readFileSync(e.abs);
-        if (!looksBinary(buf)) {
-          const text = buf.toString("utf8");
-          for (const p of contentPatterns) {
-            if (text.includes(p)) findings.push(`"${p}" found in ${relPosix}`);
-          }
-        }
-      }
-    }
-
-    if (sizeBytes > policy.scan.maxArchiveKb * 1024) {
-      findings.push(`skill directory ${Math.round(sizeBytes / 1024)} KB exceeds max_archive_kb ${policy.scan.maxArchiveKb}`);
-    }
-
-    return findings.length ? { status: "dirty", findings } : { status: "clean", findings: [] };
+    return scanDirectory(skillDir, policy.scan);
   } catch (err) {
     return { status: "unavailable", findings: [`scan error: ${(err as Error).message}`] };
   } finally {
