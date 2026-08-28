@@ -274,7 +274,19 @@ State lives in `~/.metaskill/`: `metaskill.yaml` (policy), `skills-lock.json`
 
 ```
 npm install
-npm test          # build + 62 unit/integration tests (stubbed skills CLI, temp HOME)
+npm test          # build + 112 unit/integration tests (stubbed skills CLI, temp HOME)
 ```
+
+The registry index (`index.json`) is built separately from the CLI and is not
+part of `npm test`, since it makes live network calls:
+
+```
+npm run build:index   # sweeps skills.sh, scans every repo, writes index.json
+```
+
+A scheduled workflow (`.github/workflows/index.yml`) runs this nightly and
+publishes the result as the `index-latest` GitHub Release asset, gated on a
+minimum description-coverage share and a check against the previously
+published record count, so a degraded run never overwrites a good index.
 
 MIT © xdm
