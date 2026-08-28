@@ -1,5 +1,5 @@
-// Shapes shared by the CI indexer and (in chunk B) the runtime reader.
-// This file is the contract between them; keep it free of I/O.
+// Shapes shared by the CI indexer and the runtime reader that consumes the
+// index it produces. This file is the contract between them; keep it free of I/O.
 
 export interface RegistrySkill {
   name: string; // frontmatter name, which is what the registry indexes by
