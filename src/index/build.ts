@@ -36,6 +36,7 @@ function registryOnlyRecords(source: string, registry: RegistrySkill[], meta: Re
     atRepoRoot: false,
     scan: "unknown" as const,
     scanFindings: [],
+    scanAdvisories: [],
   }));
 }
 
@@ -71,7 +72,7 @@ export async function buildIndex(opts: BuildOpts = {}): Promise<IndexFile> {
           // scanDirectory only ever returns clean or dirty; anything else would
           // be a new status we must not silently treat as safe.
           const scan = verdict.status === "clean" ? "clean" : verdict.status === "dirty" ? "dirty" : "unknown";
-          return { ...s, scan, scanFindings: verdict.findings };
+          return { ...s, scan, scanFindings: verdict.findings, scanAdvisories: verdict.advisories };
         });
         skills.push(...joinRepo(source, scanned, entries, meta));
         opts.onProgress?.(`${source}: ${scanned.length} skills`);
@@ -96,6 +97,7 @@ export async function buildIndex(opts: BuildOpts = {}): Promise<IndexFile> {
         dir: "",
         scan: "unknown" as const,
         scanFindings: [],
+        scanAdvisories: [],
       }));
       skills.push(...joinRepo(source, scanned, entries, meta));
       opts.onProgress?.(`${source}: ${scanned.length} skills via tree, unscanned`);

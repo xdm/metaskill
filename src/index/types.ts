@@ -29,6 +29,9 @@ export interface IndexRecord {
   atRepoRoot: boolean;
   scan: IndexScanStatus;
   scanFindings: string[];
+  // Pattern hits in the skill's prose. They do not deny — see ScanResult in
+  // ../types.js — but policy must show them before installing.
+  scanAdvisories: string[];
 }
 
 // Repo-level signals, declared here so the fetcher and the joiner cannot drift.

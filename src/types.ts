@@ -11,6 +11,10 @@ export type ScanStatus = "clean" | "dirty" | "unavailable" | "skipped";
 export interface ScanResult {
   status: ScanStatus;
   findings: string[];
+  // Pattern hits in a skill's prose. They do not deny — documentation that
+  // mentions a command is not the same as code that runs one — but they never
+  // pass silently either: policy routes them to the user with the line shown.
+  advisories: string[];
 }
 
 export type Decision = "auto" | "ask" | "deny";

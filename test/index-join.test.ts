@@ -10,6 +10,7 @@ function scanned(name: string, over: Partial<ScannedSkill> = {}): ScannedSkill {
     description: `desc ${name}`,
     scan: "clean",
     scanFindings: [],
+    scanAdvisories: [],
     ...over,
   };
 }
@@ -53,6 +54,15 @@ describe("joinRepo", () => {
   it("leaves the prior null when no sibling has an install count", () => {
     const [r] = joinRepo("o/r", [scanned("solo")], []);
     expect(r).toMatchObject({ installs: null, installsPrior: null, estimated: true });
+  });
+
+  it("carries prose advisories onto the record alongside the verdict", () => {
+    const out = joinRepo(
+      "o/r",
+      [scanned("a", { scan: "clean", scanAdvisories: ['"curl " found in SKILL.md'] })],
+      [reg("a", 1)],
+    );
+    expect(out[0]).toMatchObject({ scan: "clean", scanAdvisories: ['"curl " found in SKILL.md'] });
   });
 
   it("carries scan verdict, findings, and repo metadata onto every record", () => {

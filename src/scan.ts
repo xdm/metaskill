@@ -11,6 +11,18 @@ const execFileP = promisify(execFile);
 const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024; // whole-repo tarball hard cap
 const MAX_CONTENT_SCAN_BYTES = 512 * 1024; // per-file content grep cap
 
+// Documentation is not executed. A skill whose instructions say to run `curl`
+// was being denied as though it ran it: measured over the whole registry, 66%
+// of dirty verdicts came only from a content pattern appearing in prose, and
+// 88% of `curl ` hits were in markdown. Content patterns therefore skip these
+// extensions. Path and file-name patterns, and the size limit, still apply —
+// a forbidden file is forbidden wherever it sits.
+const PROSE_EXTENSIONS = new Set([".md", ".markdown", ".txt", ".rst"]);
+
+function isProse(file: string): boolean {
+  return PROSE_EXTENSIONS.has(path.extname(file).toLowerCase());
+}
+
 export interface ParsedPkg {
   github: boolean;
   owner?: string;
@@ -81,9 +93,11 @@ function looksBinary(buf: Buffer): boolean {
 // Patterns come from policy.scan.deny_if_contains and take one of three shapes:
 //   - "hooks/"     -> matches a path segment (any dir named hooks)
 //   - ".mcp.json"  -> matches a file name
-//   - "curl "      -> matches file content (text files only)
+//   - "curl "      -> matches file content; a hit in prose becomes an
+//                     advisory instead of a denial (see ScanResult)
 export function scanDirectory(dir: string, scanPolicy: Policy["scan"]): ScanResult {
   const findings: string[] = [];
+  const advisories: string[] = [];
   const pathPatterns = scanPolicy.denyIfContains.filter((p) => p.endsWith("/"));
   const namePatterns = scanPolicy.denyIfContains.filter((p) => !p.endsWith("/") && p.startsWith("."));
   const contentPatterns = scanPolicy.denyIfContains.filter((p) => !p.endsWith("/") && !p.startsWith("."));
@@ -105,8 +119,9 @@ export function scanDirectory(dir: string, scanPolicy: Policy["scan"]): ScanResu
       const buf = fs.readFileSync(e.abs);
       if (!looksBinary(buf)) {
         const text = buf.toString("utf8");
+        const sink = isProse(e.abs) ? advisories : findings;
         for (const p of contentPatterns) {
-          if (text.includes(p)) findings.push(`"${p}" found in ${relPosix}`);
+          if (text.includes(p)) sink.push(`"${p}" found in ${relPosix}`);
         }
       }
     }
@@ -118,7 +133,9 @@ export function scanDirectory(dir: string, scanPolicy: Policy["scan"]): ScanResu
     );
   }
 
-  return findings.length ? { status: "dirty", findings } : { status: "clean", findings: [] };
+  return findings.length
+    ? { status: "dirty", findings, advisories }
+    : { status: "clean", findings: [], advisories };
 }
 
 // Fetches the repo archive, extracts it to a scratch directory, locates the
@@ -129,7 +146,7 @@ export function scanDirectory(dir: string, scanPolicy: Policy["scan"]): ScanResu
 // never to auto (outside the allowlist).
 export async function scanCandidate(c: Candidate, policy: Policy, opts: ScanOpts = {}): Promise<ScanResult> {
   const parsed = parsePkg(c.pkg);
-  if (!parsed.github) return { status: "unavailable", findings: ["not a github package; cannot fetch archive"] };
+  if (!parsed.github) return { status: "unavailable", findings: ["not a github package; cannot fetch archive"], advisories: [] };
 
   const fetchImpl = opts.fetchImpl ?? fetch;
   const maxDownload = opts.maxDownloadBytes ?? MAX_DOWNLOAD_BYTES;
@@ -137,7 +154,7 @@ export async function scanCandidate(c: Candidate, policy: Policy, opts: ScanOpts
   try {
     const url = `https://codeload.github.com/${parsed.owner}/${parsed.repo}/tar.gz/HEAD`;
     const res = await fetchImpl(url, { redirect: "follow" });
-    if (!res.ok || !res.body) return { status: "unavailable", findings: [`download failed: HTTP ${res.status}`] };
+    if (!res.ok || !res.body) return { status: "unavailable", findings: [`download failed: HTTP ${res.status}`], advisories: [] };
 
     const tarPath = path.join(tmp, "archive.tar.gz");
     const chunks: Buffer[] = [];
@@ -145,7 +162,7 @@ export async function scanCandidate(c: Candidate, policy: Policy, opts: ScanOpts
     for await (const chunk of res.body as AsyncIterable<Uint8Array>) {
       total += chunk.byteLength;
       if (total > maxDownload) {
-        return { status: "unavailable", findings: ["repository archive exceeds download cap"] };
+        return { status: "unavailable", findings: ["repository archive exceeds download cap"], advisories: [] };
       }
       chunks.push(Buffer.from(chunk));
     }
@@ -158,11 +175,11 @@ export async function scanCandidate(c: Candidate, policy: Policy, opts: ScanOpts
     });
 
     const skillDir = findSkillDir(extractDir, parsed.skill);
-    if (!skillDir) return { status: "unavailable", findings: [`skill "${parsed.skill}" not found in archive`] };
+    if (!skillDir) return { status: "unavailable", findings: [`skill "${parsed.skill}" not found in archive`], advisories: [] };
 
     return scanDirectory(skillDir, policy.scan);
   } catch (err) {
-    return { status: "unavailable", findings: [`scan error: ${(err as Error).message}`] };
+    return { status: "unavailable", findings: [`scan error: ${(err as Error).message}`], advisories: [] };
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

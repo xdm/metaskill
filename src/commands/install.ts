@@ -26,7 +26,7 @@ export async function installCommand(pkg: string | undefined, flags: InstallFlag
     url: "",
   };
 
-  let scan: ScanResult = { status: "skipped", findings: [] };
+  let scan: ScanResult = { status: "skipped", findings: [], advisories: [] };
   if (
     !policy.trust.allowlist.includes(candidate.publisher) &&
     !policy.trust.denyPublishers.includes(candidate.publisher)

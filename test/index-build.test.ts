@@ -200,6 +200,7 @@ describe("buildIndex", () => {
         atRepoRoot: false,
         scan: "unknown",
         scanFindings: [],
+        scanAdvisories: [],
       },
     ]);
   });

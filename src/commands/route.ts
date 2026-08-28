@@ -171,7 +171,7 @@ export async function routeCommand(stdinText: string, opts: RouteOpts = {}): Pro
         searchLog(null, "skipped", null);
         return 0;
       }
-      let scan: ScanResult = { status: "skipped", findings: [] };
+      let scan: ScanResult = { status: "skipped", findings: [], advisories: [] };
       if (!policy.trust.allowlist.includes(candidate.publisher) && !policy.trust.denyPublishers.includes(candidate.publisher)) {
         scan = await scanCandidate(candidate, policy);
       }
@@ -305,7 +305,7 @@ export async function routeCommand(stdinText: string, opts: RouteOpts = {}): Pro
       }
       if (!candidate) continue; // coverage gap — visible in the log as a domain with no discovery
 
-      let scan: ScanResult = { status: "skipped", findings: [] };
+      let scan: ScanResult = { status: "skipped", findings: [], advisories: [] };
       const pub = candidate.publisher;
       if (!policy.trust.allowlist.includes(pub) && !policy.trust.denyPublishers.includes(pub)) {
         scan = await scanCandidate(candidate, policy);

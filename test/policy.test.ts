@@ -8,10 +8,10 @@ import type { Candidate, ScanResult } from "../src/types.js";
 function cand(publisher: string, installs: number): Candidate {
   return { pkg: `${publisher}/repo@skill`, publisher, skillName: "skill", installs, url: "" };
 }
-const clean: ScanResult = { status: "clean", findings: [] };
-const dirty: ScanResult = { status: "dirty", findings: ["curl found"] };
-const unavailable: ScanResult = { status: "unavailable", findings: [] };
-const skipped: ScanResult = { status: "skipped", findings: [] };
+const clean: ScanResult = { status: "clean", findings: [], advisories: [] };
+const dirty: ScanResult = { status: "dirty", findings: ["curl found"], advisories: [] };
+const unavailable: ScanResult = { status: "unavailable", findings: [], advisories: [] };
+const skipped: ScanResult = { status: "skipped", findings: [], advisories: [] };
 
 describe("policy.decide (spec 4.5 decision table)", () => {
   const p = defaultPolicy(); // allowlist: anthropics, vercel-labs; min_installs 5000
@@ -32,6 +32,21 @@ describe("policy.decide (spec 4.5 decision table)", () => {
 
   it("clean scan + installs >= threshold -> auto", () => {
     expect(decide(cand("stranger", 5000), clean, p).decision).toBe("auto");
+  });
+
+  // A pattern found in a skill's prose is the documented shape of the most
+  // common malicious-skill technique, and also the shape of ordinary
+  // documentation. It must not deny, and it must not pass silently.
+  it("clean scan with advisories -> ask, however popular the skill", () => {
+    const withAdvisory: ScanResult = { status: "clean", findings: [], advisories: ['"curl " found in SKILL.md'] };
+    const v = decide(cand("stranger", 1_000_000), withAdvisory, p);
+    expect(v.decision).toBe("ask");
+    expect(v.reason).toContain("curl ");
+  });
+
+  it("clean scan with no advisories and enough installs -> auto", () => {
+    const noAdvisory: ScanResult = { status: "clean", findings: [], advisories: [] };
+    expect(decide(cand("stranger", 1_000_000), noAdvisory, p).decision).toBe("auto");
   });
 
   it("clean scan below threshold -> ask", () => {

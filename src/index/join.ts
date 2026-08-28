@@ -4,6 +4,7 @@ import type { IndexRecord, IndexScanStatus, RegistrySkill, RepoMeta } from "./ty
 export interface ScannedSkill extends RepoSkill {
   scan: IndexScanStatus;
   scanFindings: string[];
+  scanAdvisories: string[];
 }
 
 export function medianInstalls(values: number[]): number | null {
@@ -44,6 +45,7 @@ export function joinRepo(
       atRepoRoot: s.rel === "",
       scan: s.scan,
       scanFindings: s.scanFindings,
+      scanAdvisories: s.scanAdvisories,
     };
   });
 }

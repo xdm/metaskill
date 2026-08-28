@@ -93,6 +93,13 @@ export function decide(c: Candidate, scan: ScanResult, p: Policy): PolicyDecisio
   if (scan.status === "dirty") {
     return { decision: "deny", reason: `scan: ${scan.findings.slice(0, 3).join("; ") || "dirty"}` };
   }
+  // Popularity says nothing about content: measured across the registry, the
+  // rate of pattern hits in real code is identical above and below the install
+  // threshold. An advisory therefore outranks the threshold.
+  if (scan.advisories.length) {
+    return { decision: "ask", reason: `scan advisory: ${scan.advisories.slice(0, 3).join("; ")}` };
+  }
+
   const { minInstalls, requireCleanScan } = p.trust.autoThreshold;
   const enough = c.installs >= minInstalls;
   if (enough && (scan.status === "clean" || !requireCleanScan)) {
