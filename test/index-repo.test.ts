@@ -171,4 +171,19 @@ describe("fetchSkillsViaTree", () => {
     const fetchImpl = (async () => ({ ok: false, status: 404 })) as unknown as typeof fetch;
     expect(await fetchSkillsViaTree("o/gone", { fetchImpl })).toEqual([]);
   });
+
+  it("returns [] on a truncated tree instead of the partial SKILL.md list it found", async () => {
+    const fetchImpl = (async (url: string) => {
+      const u = String(url);
+      if (u.includes("/git/trees/")) {
+        return {
+          ok: true,
+          json: async () => ({ truncated: true, tree: [{ path: "skills/real/SKILL.md" }] }),
+        } as unknown as Response;
+      }
+      throw new Error("must not fetch raw content off a truncated tree");
+    }) as unknown as typeof fetch;
+
+    expect(await fetchSkillsViaTree("o/big", { fetchImpl })).toEqual([]);
+  });
 });

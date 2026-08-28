@@ -74,4 +74,15 @@ describe("joinRepo", () => {
     const out = joinRepo("o/r", [scanned("a")], [reg("a", 1), reg("vanished", 999)]);
     expect(out).toHaveLength(1);
   });
+
+  it("marks a skill whose directory is the repo root, and leaves nested skills unmarked", () => {
+    const out = joinRepo(
+      "o/r",
+      [scanned("root-skill", { rel: "" }), scanned("nested")],
+      [reg("root-skill", 10), reg("nested", 20)],
+    );
+    const byName = Object.fromEntries(out.map((r) => [r.name, r]));
+    expect(byName["root-skill"]!.atRepoRoot).toBe(true);
+    expect(byName.nested!.atRepoRoot).toBe(false);
+  });
 });

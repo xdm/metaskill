@@ -1,10 +1,10 @@
 import { defaultPolicy } from "../policy.js";
 import type { Policy } from "../types.js";
+import { scanDirectory } from "../scan.js";
 import { joinRepo, type ScannedSkill } from "./join.js";
 import { fetchRepoArchive, fetchRepoMeta, fetchSkillsViaTree, findSkillDirs } from "./repo.js";
-import { scanDirectory } from "./scan.js";
 import { sweepRegistry } from "./registry.js";
-import { INDEX_SCHEMA_VERSION, type IndexFile, type IndexRecord, type RegistrySkill } from "./types.js";
+import { INDEX_SCHEMA_VERSION, type IndexFile, type IndexRecord, type RegistrySkill, type RepoMeta } from "./types.js";
 
 export interface BuildOpts {
   fetchImpl?: typeof fetch;
@@ -20,7 +20,7 @@ export interface BuildOpts {
 // still knows the skill exists and how popular it is. A description-less
 // record cannot be matched by lexical search, but omitting it silently would
 // hide a real skill, and "unknown" keeps it off the automatic path.
-function registryOnlyRecords(source: string, registry: RegistrySkill[]): IndexRecord[] {
+function registryOnlyRecords(source: string, registry: RegistrySkill[], meta: RepoMeta): IndexRecord[] {
   return registry.map((r) => ({
     name: r.name,
     source,
@@ -29,6 +29,11 @@ function registryOnlyRecords(source: string, registry: RegistrySkill[]): IndexRe
     installs: r.installs,
     installsPrior: null,
     estimated: false,
+    repoStars: meta.stars,
+    repoPushedAt: meta.pushedAt,
+    // No file was ever read for a registry-only stub, so it cannot be a
+    // root-level skill by any positive evidence — false, not unknown.
+    atRepoRoot: false,
     scan: "unknown" as const,
     scanFindings: [],
   }));
@@ -36,7 +41,13 @@ function registryOnlyRecords(source: string, registry: RegistrySkill[]): IndexRe
 
 export async function buildIndex(opts: BuildOpts = {}): Promise<IndexFile> {
   const scanPolicy = opts.scanPolicy ?? defaultPolicy().scan;
-  const registry = await sweepRegistry({ fetchImpl: opts.fetchImpl, grams: opts.grams });
+  // The sweep is ~143 sequential requests and can run up to ~48 minutes worst
+  // case; without this, CI emits nothing until it either finishes or times out.
+  const registry = await sweepRegistry({
+    fetchImpl: opts.fetchImpl,
+    grams: opts.grams,
+    onProgress: (gram, total) => opts.onProgress?.(`sweep ${gram}: ${total} skills so far`),
+  });
 
   const bySource = new Map<string, RegistrySkill[]>();
   for (const r of registry) {
@@ -69,7 +80,7 @@ export async function buildIndex(opts: BuildOpts = {}): Promise<IndexFile> {
         // Nothing has been pushed for this repo at this point, so falling back
         // to stubs cannot duplicate records — and "unknown" keeps them off the
         // automatic path, which an unscanned repository has not earned.
-        skills.push(...registryOnlyRecords(source, entries));
+        skills.push(...registryOnlyRecords(source, entries, meta));
         opts.onProgress?.(`${source}: scan failed (${(err as Error).message}), ${entries.length} records from the registry only`);
       } finally {
         snap.cleanup();
@@ -91,7 +102,7 @@ export async function buildIndex(opts: BuildOpts = {}): Promise<IndexFile> {
       continue;
     }
 
-    skills.push(...registryOnlyRecords(source, entries));
+    skills.push(...registryOnlyRecords(source, entries, meta));
     opts.onProgress?.(`${source}: unreachable, ${entries.length} records from the registry only`);
   }
 

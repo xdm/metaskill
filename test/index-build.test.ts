@@ -160,16 +160,26 @@ describe("buildIndex", () => {
     });
 
     expect(idx.skills).toHaveLength(1);
-    expect(idx.skills[0]).toMatchObject({ name: "locked", installs: 40, scan: "unknown" });
+    // repoStars must survive onto the stub: it is exactly this scan == "unknown"
+    // record that will be asked about, and the credibility signal is meant to
+    // inform that question.
+    expect(idx.skills[0]).toMatchObject({ name: "locked", installs: 40, scan: "unknown", repoStars: 1 });
     expect(messages.some((m) => m.includes("scan failed"))).toBe(true);
   });
 
-  it("still records a registry-only stub when neither archive nor tree answers", async () => {
+  it("still records a registry-only stub when neither archive nor tree answers, carrying repo metadata", async () => {
     const fetchImpl = (async (url: string) => {
-      if (String(url).startsWith("https://skills.sh/api/search")) {
+      const u = String(url);
+      if (u.startsWith("https://skills.sh/api/search")) {
         return {
           ok: true,
           json: async () => ({ skills: [{ name: "ghost", source: "o/gone", installs: 12 }] }),
+        } as unknown as Response;
+      }
+      if (u.startsWith("https://api.github.com/repos/")) {
+        return {
+          ok: true,
+          json: async () => ({ stargazers_count: 42, pushed_at: "2026-08-20T00:00:00Z" }),
         } as unknown as Response;
       }
       return { ok: false, status: 404, body: null } as unknown as Response;
@@ -185,6 +195,9 @@ describe("buildIndex", () => {
         installs: 12,
         installsPrior: null,
         estimated: false,
+        repoStars: 42,
+        repoPushedAt: "2026-08-20",
+        atRepoRoot: false,
         scan: "unknown",
         scanFindings: [],
       },

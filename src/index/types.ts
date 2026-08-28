@@ -23,6 +23,10 @@ export interface IndexRecord {
   estimated: boolean; // true when installs is null and only the prior exists
   repoStars?: number;
   repoPushedAt?: string; // YYYY-MM-DD
+  // True when the skill's SKILL.md sits at the repository root, so its scan
+  // covered the whole repository rather than a skill-scoped subdirectory —
+  // needed to keep whole-repo false positives from reading as pattern noise.
+  atRepoRoot: boolean;
   scan: IndexScanStatus;
   scanFindings: string[];
 }

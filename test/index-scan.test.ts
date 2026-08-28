@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { scanDirectory } from "../src/index/scan.js";
+import { scanDirectory } from "../src/scan.js";
 import { defaultPolicy } from "../src/policy.js";
 
 let dir: string;

@@ -68,7 +68,12 @@ export async function fetchRepoArchive(source: string, opts: RepoOpts = {}): Pro
     fs.writeFileSync(tarPath, Buffer.concat(chunks));
     const extractDir = path.join(tmp, "x");
     fs.mkdirSync(extractDir);
-    await execFileP("tar", ["-xzf", tarPath, "-C", extractDir], { timeout: 120_000 });
+    // A hostile permission bit surviving extraction is exactly what would turn
+    // walkDir's silent readdir failure into a false clean verdict, so strip
+    // both ownership and mode rather than trust anything from the archive.
+    await execFileP("tar", ["-xzf", tarPath, "-C", extractDir, "--no-same-owner", "--no-same-permissions"], {
+      timeout: 120_000,
+    });
 
     // GitHub archives wrap everything in a single <repo>-<ref> directory.
     const entries = fs.readdirSync(extractDir);
@@ -148,7 +153,12 @@ export async function fetchSkillsViaTree(
       headers: ghHeaders(opts.token),
     });
     if (!res.ok) return [];
-    const d = (await res.json()) as { tree?: { path?: unknown }[] };
+    const d = (await res.json()) as { tree?: { path?: unknown }[]; truncated?: unknown };
+    // A truncated tree is a partial file list, not a complete one missing a
+    // few entries: joinRepo drops every registry entry with no matching file,
+    // so treating this as "no answer" lets the caller fall back to honest
+    // registry-only stubs instead of silently erasing skills past the cutoff.
+    if (d.truncated) return [];
     paths = (d.tree ?? [])
       .map((t) => (typeof t.path === "string" ? t.path : ""))
       // Basename match, not suffix: "docs/NOT_A_SKILL.md" ends with "SKILL.md"

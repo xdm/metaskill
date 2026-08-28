@@ -41,6 +41,7 @@ export function joinRepo(
       estimated: installs === null,
       repoStars: meta.stars,
       repoPushedAt: meta.pushedAt,
+      atRepoRoot: s.rel === "",
       scan: s.scan,
       scanFindings: s.scanFindings,
     };
