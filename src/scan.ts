@@ -78,6 +78,10 @@ function looksBinary(buf: Buffer): boolean {
 
 // The pattern rules, applied to a directory already on disk. Shared with the
 // CI indexer so the runtime scan and the indexed verdict can never disagree.
+// Patterns come from policy.scan.deny_if_contains and take one of three shapes:
+//   - "hooks/"     -> matches a path segment (any dir named hooks)
+//   - ".mcp.json"  -> matches a file name
+//   - "curl "      -> matches file content (text files only)
 export function scanDirectory(dir: string, scanPolicy: Policy["scan"]): ScanResult {
   const findings: string[] = [];
   const pathPatterns = scanPolicy.denyIfContains.filter((p) => p.endsWith("/"));
@@ -117,11 +121,10 @@ export function scanDirectory(dir: string, scanPolicy: Policy["scan"]): ScanResu
   return findings.length ? { status: "dirty", findings } : { status: "clean", findings: [] };
 }
 
-// Static scan of the skill's directory inside the repo tarball, BEFORE any
-// `skills add` runs (spec §5). Patterns from policy.scan.deny_if_contains:
-//   - "hooks/"     -> matches a path segment (any dir named hooks)
-//   - ".mcp.json"  -> matches a file name
-//   - "curl "      -> matches file content (text files only)
+// Fetches the repo archive, extracts it to a scratch directory, locates the
+// named skill inside it, and delegates to scanDirectory for the pattern
+// rules — all before `skills add` ever runs, so a verdict exists before
+// anything reaches disk in its real location.
 // Result "unavailable" means we could not verify — policy maps that to ask,
 // never to auto (outside the allowlist).
 export async function scanCandidate(c: Candidate, policy: Policy, opts: ScanOpts = {}): Promise<ScanResult> {
@@ -150,7 +153,9 @@ export async function scanCandidate(c: Candidate, policy: Policy, opts: ScanOpts
 
     const extractDir = path.join(tmp, "x");
     fs.mkdirSync(extractDir);
-    await execFileP("tar", ["-xzf", tarPath, "-C", extractDir], { timeout: 30_000 });
+    await execFileP("tar", ["-xzf", tarPath, "-C", extractDir, "--no-same-owner", "--no-same-permissions"], {
+      timeout: 30_000,
+    });
 
     const skillDir = findSkillDir(extractDir, parsed.skill);
     if (!skillDir) return { status: "unavailable", findings: [`skill "${parsed.skill}" not found in archive`] };
