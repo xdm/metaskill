@@ -64,6 +64,13 @@ export async function buildIndex(opts: BuildOpts = {}): Promise<IndexFile> {
         });
         skills.push(...joinRepo(source, scanned, entries, meta));
         opts.onProgress?.(`${source}: ${scanned.length} skills`);
+      } catch (err) {
+        // One repository's files must not sink a run over hundreds of them.
+        // Nothing has been pushed for this repo at this point, so falling back
+        // to stubs cannot duplicate records — and "unknown" keeps them off the
+        // automatic path, which an unscanned repository has not earned.
+        skills.push(...registryOnlyRecords(source, entries));
+        opts.onProgress?.(`${source}: scan failed (${(err as Error).message}), ${entries.length} records from the registry only`);
       } finally {
         snap.cleanup();
       }

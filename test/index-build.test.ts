@@ -124,6 +124,46 @@ describe("buildIndex", () => {
     });
   });
 
+  it("isolates a repository whose scan throws instead of sinking the whole run", async () => {
+    const tar = repoTarball([{ dir: "skills/locked", name: "locked" }]);
+
+    const fetchImpl = (async (url: string) => {
+      const u = String(url);
+      if (u.startsWith("https://skills.sh/api/search")) {
+        return {
+          ok: true,
+          json: async () => ({ skills: [{ name: "locked", source: "o/locked", installs: 40 }] }),
+        } as unknown as Response;
+      }
+      if (u.startsWith("https://api.github.com/repos/")) {
+        return { ok: true, json: async () => ({ stargazers_count: 1 }) } as unknown as Response;
+      }
+      return {
+        ok: true,
+        body: (async function* () {
+          yield new Uint8Array(tar);
+        })(),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    const messages: string[] = [];
+    const idx = await buildIndex({
+      fetchImpl,
+      grams: ["aa"],
+      tmpBase: tmp,
+      // A malformed policy makes scanDirectory throw on its first use. The
+      // trigger is synthetic; what is under test is that one repository's
+      // scan blowing up degrades that repository rather than rejecting a run
+      // that spans hundreds of them.
+      scanPolicy: { denyIfContains: undefined as unknown as string[], maxArchiveKb: 2048 },
+      onProgress: (m) => messages.push(m),
+    });
+
+    expect(idx.skills).toHaveLength(1);
+    expect(idx.skills[0]).toMatchObject({ name: "locked", installs: 40, scan: "unknown" });
+    expect(messages.some((m) => m.includes("scan failed"))).toBe(true);
+  });
+
   it("still records a registry-only stub when neither archive nor tree answers", async () => {
     const fetchImpl = (async (url: string) => {
       if (String(url).startsWith("https://skills.sh/api/search")) {
