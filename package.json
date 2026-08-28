@@ -30,6 +30,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit && node scripts/build.mjs",
+    "build:index": "npm run build && node dist/index-builder.js index.json",
     "prepublishOnly": "npm run build && vitest run",
     "test": "npm run build && vitest run",
     "test:unit": "vitest run --exclude test/integration.test.ts",

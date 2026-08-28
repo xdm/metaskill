@@ -12,15 +12,19 @@ const banner = [
   "const require = __metaskillCreateRequire(import.meta.url);",
 ].join("\n");
 
-await build({
-  entryPoints: ["src/cli.ts"],
-  outfile: "dist/cli.js",
+const common = {
   bundle: true,
   platform: "node",
   format: "esm",
   target: "node20",
   banner: { js: banner },
   legalComments: "none",
-});
+};
 
+await build({ ...common, entryPoints: ["src/cli.ts"], outfile: "dist/cli.js" });
 chmodSync("dist/cli.js", 0o755);
+
+// CI-only entry: builds the registry index. Bundled the same way so the
+// workflow can run it straight from a checkout with no install step.
+await build({ ...common, entryPoints: ["src/index/cli.ts"], outfile: "dist/index-builder.js" });
+chmodSync("dist/index-builder.js", 0o755);
