@@ -88,8 +88,8 @@ export function classifyHeuristic(
   const stackDomains = detectStack(cwd, taxonomy);
   const domains = [...fromPrompt];
   // Stack domains only support a task that already has a subject — a bare
-  // stack match on every prompt in the repo would be noise (spec §2 example:
-  // xlsx from the prompt + python from the stack).
+  // stack match on every prompt in the repo would be noise (e.g. xlsx from
+  // the prompt combined with python from the stack, not python by itself).
   if (fromPrompt.length > 0) {
     for (const s of stackDomains.slice(0, 2)) {
       if (!domains.includes(s)) domains.push(s);

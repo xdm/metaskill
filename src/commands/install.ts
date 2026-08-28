@@ -9,8 +9,9 @@ export interface InstallFlags {
   domain?: string;
 }
 
-// Manual `metaskill install <pkg>` (spec 4.4): same policy + scan as the
-// automatic path. --force bypasses `ask` but NEVER `deny` (spec §5).
+// Manual `metaskill install <pkg>`: same policy and scan as the automatic
+// path. --force bypasses `ask` but never `deny` — deny cannot be bypassed by
+// any flag, on this path or the automatic one.
 export async function installCommand(pkg: string | undefined, flags: InstallFlags): Promise<number> {
   if (!pkg) {
     process.stderr.write("usage: metaskill install <owner/repo@skill> [--domain <domain>] [--force]\n");
