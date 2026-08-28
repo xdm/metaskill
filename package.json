@@ -8,7 +8,7 @@
     "metaskill": "dist/cli.js"
   },
   "files": [
-    "dist",
+    "dist/cli.js",
     "skills",
     "commands",
     "hooks",

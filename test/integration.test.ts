@@ -467,8 +467,10 @@ describe("packaged assets", () => {
       expect(body, f).not.toContain("{{");
     }
 
-    // everything the plugin needs must ship in the npm tarball
-    for (const entry of ["dist", "skills", "commands", "hooks", "templates", ".claude-plugin"]) {
+    // everything the plugin needs must ship in the npm tarball — dist/cli.js
+    // specifically, not the whole dist/ directory: the CI-only index builder
+    // is unreachable via "bin" and has no reason to ride along with it.
+    for (const entry of ["dist/cli.js", "skills", "commands", "hooks", "templates", ".claude-plugin"]) {
       expect(pkg.files, entry).toContain(entry);
     }
   });
