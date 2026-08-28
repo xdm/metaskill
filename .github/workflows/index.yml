@@ -1,0 +1,54 @@
+name: Build registry index
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-index:
+    runs-on: ubuntu-latest
+    # The sweep is sequential over ~143 grams and the archive pass downloads
+    # ~281 repositories; 60 minutes leaves no headroom if either degrades.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build the index
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run build:index
+
+      - name: Summarise
+        run: |
+          node -e '
+            const i = JSON.parse(require("fs").readFileSync("index.json", "utf8"));
+            const dirty = i.skills.filter(s => s.scan === "dirty");
+            const byPattern = {};
+            for (const s of dirty) for (const f of s.scanFindings) {
+              const m = f.match(/"([^"]+)"/);
+              const k = m ? m[1] : f.split(":")[0];
+              byPattern[k] = (byPattern[k] || 0) + 1;
+            }
+            console.log("skills:", i.skillCount, "repos:", i.repoCount);
+            console.log("estimated:", i.skills.filter(s => s.estimated).length);
+            console.log("dirty:", dirty.length, JSON.stringify(byPattern));
+          ' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish as a rolling release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view index-latest >/dev/null 2>&1 \
+            || gh release create index-latest --title "Registry index" --notes "Rebuilt daily. Consumed by metaskill sync."
+          gh release upload index-latest index.json --clobber
