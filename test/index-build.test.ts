@@ -167,6 +167,22 @@ describe("buildIndex", () => {
     expect(messages.some((m) => m.includes("scan failed"))).toBe(true);
   });
 
+  it("refuses to build on a degraded sweep instead of handing the gate a thin index", async () => {
+    // 400, not 429: retry and backoff belong to sweepRegistry's own tests, and
+    // borrowing them here would only buy this case fifteen seconds on the clock.
+    const fetchImpl = (async (url: string) => {
+      const u = String(url);
+      if (u.startsWith("https://skills.sh/api/search")) {
+        return { ok: false, status: 400, json: async () => ({ error: "bad query" }) } as unknown as Response;
+      }
+      throw new Error("the archive pass must not run on a sweep this thin");
+    }) as unknown as typeof fetch;
+
+    await expect(buildIndex({ fetchImpl, grams: ["aa"], tmpBase: tmp })).rejects.toThrow(
+      /registry sweep degraded: 1 of 1 grams never answered \(aa\)/,
+    );
+  });
+
   it("still records a registry-only stub when neither archive nor tree answers, carrying repo metadata", async () => {
     const fetchImpl = (async (url: string) => {
       const u = String(url);

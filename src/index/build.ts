@@ -3,8 +3,14 @@ import type { Policy } from "../types.js";
 import { scanDirectory } from "../scan.js";
 import { joinRepo, type ScannedSkill } from "./join.js";
 import { fetchRepoArchive, fetchRepoMeta, fetchSkillsViaTree, findSkillDirs } from "./repo.js";
-import { sweepRegistry } from "./registry.js";
+import { SWEEP_GRAMS, sweepRegistry } from "./registry.js";
 import { INDEX_SCHEMA_VERSION, type IndexFile, type IndexRecord, type RegistrySkill, type RepoMeta } from "./types.js";
+
+// The sweep tolerates a stray gram, since coverage overlaps heavily and the
+// next nightly run picks up what this one missed. A larger share is the
+// registry refusing to answer, and an index built on it is not worth
+// publishing.
+const MAX_FAILED_GRAM_SHARE = 0.05;
 
 export interface BuildOpts {
   fetchImpl?: typeof fetch;
@@ -42,13 +48,25 @@ function registryOnlyRecords(source: string, registry: RegistrySkill[], meta: Re
 
 export async function buildIndex(opts: BuildOpts = {}): Promise<IndexFile> {
   const scanPolicy = opts.scanPolicy ?? defaultPolicy().scan;
-  // The sweep is ~143 sequential requests and can run up to ~48 minutes worst
-  // case; without this, CI emits nothing until it either finishes or times out.
-  const registry = await sweepRegistry({
+  const grams = opts.grams ?? SWEEP_GRAMS;
+  // The sweep paces itself under the registry's rate limit, so it is ~143
+  // requests over ~6 minutes; without this, CI emits nothing until it finishes.
+  const { skills: registry, failedGrams } = await sweepRegistry({
     fetchImpl: opts.fetchImpl,
-    grams: opts.grams,
+    grams,
     onProgress: (gram, total) => opts.onProgress?.(`sweep ${gram}: ${total} skills so far`),
   });
+
+  // Every later pass reads the registry, so a gram that never answered is
+  // skills missing from the index rather than a slower build. Past a small
+  // share, the archive pass would spend forty minutes producing an index the
+  // publish gate then rejects — stop here, where the reason is still legible.
+  if (failedGrams.length > grams.length * MAX_FAILED_GRAM_SHARE) {
+    throw new Error(
+      `registry sweep degraded: ${failedGrams.length} of ${grams.length} grams never answered ` +
+        `(${failedGrams.slice(0, 8).join(", ")}${failedGrams.length > 8 ? ", …" : ""})`,
+    );
+  }
 
   const bySource = new Map<string, RegistrySkill[]>();
   for (const r of registry) {

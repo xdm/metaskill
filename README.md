@@ -274,7 +274,7 @@ State lives in `~/.metaskill/`: `metaskill.yaml` (policy), `skills-lock.json`
 
 ```
 npm install
-npm test          # build + 112 unit/integration tests (stubbed skills CLI, temp HOME)
+npm test          # build + 126 unit/integration tests (stubbed skills CLI, temp HOME)
 ```
 
 The registry index (`index.json`) is built separately from the CLI and is not

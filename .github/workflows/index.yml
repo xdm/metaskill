@@ -11,8 +11,11 @@ permissions:
 jobs:
   build-index:
     runs-on: ubuntu-latest
-    # The sweep is sequential over ~143 grams and the archive pass downloads
-    # ~281 repositories; 60 minutes leaves no headroom if either degrades.
+    # The sweep paces itself under the registry's 30-requests-a-minute limit,
+    # so ~143 grams cost ~6 minutes before the archive pass downloads ~790
+    # repositories at a few seconds each; 60 minutes leaves no headroom, and a
+    # run that overshoots this one is killed before the publish step, not
+    # halfway through it.
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4

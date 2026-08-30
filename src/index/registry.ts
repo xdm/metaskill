@@ -19,11 +19,37 @@ export const SWEEP_GRAMS: readonly string[] = [
   "wi", "wo", "wr", "xl", "ya", "yo", "za", "zi",
 ];
 
+// The endpoint answers past 30 requests a minute with 429, and its error body
+// is valid JSON with no `skills` key — which parseSearchResponse reads as "no
+// results". An unpaced sweep therefore loses grams without ever erroring, so
+// the interval is the fix and everything below is only about noticing.
+// 25/min leaves headroom under the published limit and costs about six minutes
+// against the archive pass's forty.
+const MIN_INTERVAL_MS = 2_400;
+// Measured recovery from a 429 is ~12 seconds, so one wait past the window is
+// enough for a gram that a burst pushed over the edge.
+const BACKOFF_MS = 15_000;
+const MAX_ATTEMPTS = 2;
+// A run this long is the endpoint being down, not grams being unlucky. Each
+// remaining gram would pay the full retry cost to learn the same thing, and
+// the caller rejects the sweep on the tally either way.
+const MAX_CONSECUTIVE_FAILURES = 20;
+
 export interface SweepOpts {
   fetchImpl?: typeof fetch;
   grams?: readonly string[];
   timeoutMs?: number;
+  minIntervalMs?: number;
+  backoffMs?: number;
   onProgress?: (gram: string, total: number) => void;
+}
+
+export interface SweepResult {
+  skills: RegistrySkill[];
+  // Coverage is a union over grams, so a gram that never answered is skills
+  // missing from the index rather than a slower build. Reported, not thrown
+  // on: how much loss is tolerable is the caller's call, not the sweep's.
+  failedGrams: string[];
 }
 
 interface RawSkill {
@@ -51,29 +77,62 @@ function key(s: RegistrySkill): string {
   return `${s.source}@${s.name}`;
 }
 
-// One gram failing must not sink the build — a partial index beats no index,
-// and the next scheduled run picks up whatever this one missed.
-export async function sweepRegistry(opts: SweepOpts = {}): Promise<RegistrySkill[]> {
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+export async function sweepRegistry(opts: SweepOpts = {}): Promise<SweepResult> {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const grams = opts.grams ?? SWEEP_GRAMS;
+  const minInterval = opts.minIntervalMs ?? MIN_INTERVAL_MS;
+  const backoff = opts.backoffMs ?? BACKOFF_MS;
   const merged = new Map<string, RegistrySkill>();
+  const failedGrams: string[] = [];
+  let consecutiveFailures = 0;
+  // Start-to-start pacing: the request's own latency counts toward the
+  // interval, so a slow endpoint is never charged twice for it.
+  let nextAt = 0;
 
-  for (const gram of grams) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 20_000);
-    try {
-      const res = await fetchImpl(`${SEARCH_URL}${encodeURIComponent(gram)}`, { signal: ctrl.signal });
-      if (!res.ok) continue;
-      for (const s of parseSearchResponse(await res.json())) {
-        const prev = merged.get(key(s));
-        if (!prev || s.installs > prev.installs) merged.set(key(s), s);
+  for (const [i, gram] of grams.entries()) {
+    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+      failedGrams.push(...grams.slice(i));
+      break;
+    }
+
+    let answered = false;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS && !answered; attempt++) {
+      const wait = nextAt - Date.now();
+      if (wait > 0) await sleep(wait);
+      nextAt = Date.now() + minInterval;
+
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 20_000);
+      try {
+        const res = await fetchImpl(`${SEARCH_URL}${encodeURIComponent(gram)}`, { signal: ctrl.signal });
+        if (res.ok) {
+          for (const s of parseSearchResponse(await res.json())) {
+            const prev = merged.get(key(s));
+            if (!prev || s.installs > prev.installs) merged.set(key(s), s);
+          }
+          answered = true;
+        } else if (res.status === 429 || res.status >= 500) {
+          nextAt = Date.now() + backoff;
+        } else {
+          break; // a 4xx a retry cannot fix
+        }
+      } catch {
+        /* network error or timeout; retrying at the normal interval is the whole response */
+      } finally {
+        clearTimeout(timer);
       }
-    } catch {
-      /* one bad gram, keep sweeping */
-    } finally {
-      clearTimeout(timer);
+    }
+
+    if (answered) {
+      consecutiveFailures = 0;
+    } else {
+      failedGrams.push(gram);
+      consecutiveFailures++;
     }
     opts.onProgress?.(gram, merged.size);
   }
-  return [...merged.values()];
+
+  return { skills: [...merged.values()], failedGrams };
 }
