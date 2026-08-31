@@ -106,8 +106,8 @@ What backs it up:
   local heuristics can't classify (non-English prompts included), the model
   already in your session derives the phrase and re-enters metaskill with
   `route --search` — same policy path, so even skills the taxonomy has never
-  heard of are found, vetted, and installed. (`ANTHROPIC_API_KEY` optionally
-  enables pre-prompt classification via Haiku.)
+  heard of are found, vetted, and installed. metaskill never calls a model
+  API itself, so there is no key to set and no second bill.
 - **It fails safe.** On any internal error, registry outage, or timeout, the
   hook exits silently and your prompt proceeds untouched. Installs get 20s;
   on timeout the candidate is downgraded to a question. (Proven during
@@ -274,7 +274,7 @@ State lives in `~/.metaskill/`: `metaskill.yaml` (policy), `skills-lock.json`
 
 ```
 npm install
-npm test          # build + 126 unit/integration tests (stubbed skills CLI, temp HOME)
+npm test          # build + 122 unit/integration tests (stubbed skills CLI, temp HOME)
 ```
 
 The registry index (`index.json`) is built separately from the CLI and is not

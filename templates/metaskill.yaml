@@ -1,8 +1,6 @@
 version: 1
 classifier:
-  llm: auto          # auto | off | always
-  model: claude-haiku-4-5
-  trivial_max_chars: 40
+  trivial_max_chars: 40   # shorter than this with no domain hit = trivial
 
 trust:
   allowlist:         # auto-install and auto-update

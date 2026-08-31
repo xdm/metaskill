@@ -1,6 +1,5 @@
 import { readCache } from "../cache.js";
 import { classifyHeuristic } from "../classify/heuristics.js";
-import { classifyLlm } from "../classify/llm.js";
 import { buildContext, type RouteReport } from "../context.js";
 import { discover, discoverByQuery, publisherOf } from "../discover.js";
 import { installSkill } from "../install.js";
@@ -30,10 +29,9 @@ function emit(context: string): void {
   );
 }
 
-// No-API-key classifier fallback: the model reading this context IS a
-// classifier — ask it to pick domains and re-enter route with --domains.
-// Uses the session the user is already paying for; ANTHROPIC_API_KEY becomes
-// optional (pre-prompt classification only).
+// Classification happens in-session: the model reading this context IS the
+// classifier — ask it to name the capability and re-enter route with
+// --search (or --domains). metaskill never calls a model itself.
 const SYSTEM_TRAFFIC_MARKERS = [
   "[SYSTEM NOTIFICATION",
   "<task-notification>",
@@ -118,7 +116,6 @@ export async function routeCommand(stdinText: string, opts: RouteOpts = {}): Pro
               : [],
             installed: installedPkg ? [installedPkg] : [],
             latency_ms: Date.now() - t0,
-            llm_used: false,
           },
           policy,
         );
@@ -148,7 +145,6 @@ export async function routeCommand(stdinText: string, opts: RouteOpts = {}): Pro
             discovered: [],
             installed: [],
             latency_ms: Date.now() - t0,
-            llm_used: false,
           },
           policy,
         );
@@ -216,32 +212,17 @@ export async function routeCommand(stdinText: string, opts: RouteOpts = {}): Pro
     // notification must not install a pdf skill — only human task text counts.
     if (!manual.length && isSystemTraffic(prompt)) return 0;
 
-    // 1-2: triviality + classification (heuristics, then LLM per policy),
-    // unless the model already classified for us (--domains).
+    // 1-2: triviality + classification (local heuristics; on a miss the
+    // in-session model classifies), unless it already did (--domains).
     let domains: string[] = manual;
-    let llmUsed = false;
     if (!manual.length) {
       const h = classifyHeuristic(prompt, cwd, policy.classifier.trivialMaxChars, taxonomy);
       domains = [...h.domains];
-      let trivial = h.trivial;
-      const wantLlm =
-        policy.classifier.llm === "always" ||
-        (policy.classifier.llm === "auto" && !trivial && h.confidence !== "high");
-      if (wantLlm) {
-        const r = await classifyLlm(prompt, h.stackDomains, policy.classifier.model, {
-          domainIds: taxonomyIds,
-        });
-        if (r) {
-          llmUsed = true;
-          trivial = trivial || (r.trivial && domains.length === 0 && r.domains.length === 0);
-          domains = [...new Set([...domains, ...r.domains])].slice(0, 4);
-        }
-      }
-      if (trivial) return 0;
+      if (h.trivial) return 0;
       if (domains.length === 0) {
-        // Classification miss: log it (spec 4.6), and when no LLM was
-        // available hand classification to the in-session model itself.
-        if (!llmUsed) emit(selfClassifyContext());
+        // Classification miss: log it (spec 4.6) and hand classification to
+        // the in-session model itself.
+        emit(selfClassifyContext());
         appendLog(
           {
             ts: new Date().toISOString(),
@@ -252,7 +233,6 @@ export async function routeCommand(stdinText: string, opts: RouteOpts = {}): Pro
             discovered: [],
             installed: [],
             latency_ms: Date.now() - t0,
-            llm_used: llmUsed,
           },
           policy,
         );
@@ -352,7 +332,6 @@ export async function routeCommand(stdinText: string, opts: RouteOpts = {}): Pro
         discovered: discoveredLog,
         installed: installedPkgs,
         latency_ms: Date.now() - t0,
-        llm_used: llmUsed,
       },
       policy,
     );

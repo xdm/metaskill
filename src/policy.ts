@@ -7,7 +7,7 @@ import type { Candidate, Policy, PolicyDecision, ScanResult } from "./types.js";
 export function defaultPolicy(): Policy {
   return {
     version: 1,
-    classifier: { llm: "auto", model: "claude-haiku-4-5", trivialMaxChars: 40 },
+    classifier: { trivialMaxChars: 40 },
     trust: {
       allowlist: ["anthropics", "vercel-labs"],
       autoThreshold: { minInstalls: 5000, requireCleanScan: true },
@@ -41,8 +41,6 @@ export function loadPolicy(): Policy {
   try {
     const y = (YAML.parse(raw) ?? {}) as Record<string, any>;
     const c = y.classifier ?? {};
-    if (c.llm === "auto" || c.llm === "off" || c.llm === "always") p.classifier.llm = c.llm;
-    if (typeof c.model === "string") p.classifier.model = c.model;
     if (typeof c.trivial_max_chars === "number") p.classifier.trivialMaxChars = c.trivial_max_chars;
 
     const t = y.trust ?? {};

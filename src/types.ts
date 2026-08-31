@@ -27,8 +27,6 @@ export interface PolicyDecision {
 export interface Policy {
   version: number;
   classifier: {
-    llm: "auto" | "off" | "always";
-    model: string;
     trivialMaxChars: number;
   };
   trust: {
@@ -93,7 +91,6 @@ export interface RouteLogEntry {
   discovered: DiscoveredLogItem[];
   installed: string[];
   latency_ms: number;
-  llm_used: boolean;
 }
 
 export interface CacheFile {

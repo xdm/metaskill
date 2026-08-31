@@ -89,7 +89,6 @@ describe("policy.loadPolicy", () => {
       [
         "version: 1",
         "classifier:",
-        "  llm: off",
         "  trivial_max_chars: 25",
         "trust:",
         "  allowlist: [me]",
@@ -108,7 +107,6 @@ describe("policy.loadPolicy", () => {
       ].join("\n"),
     );
     const p = loadPolicy();
-    expect(p.classifier.llm).toBe("off");
     expect(p.classifier.trivialMaxChars).toBe(25);
     expect(p.trust.allowlist).toEqual(["me"]);
     expect(p.trust.autoThreshold).toEqual({ minInstalls: 100, requireCleanScan: false });
@@ -118,6 +116,21 @@ describe("policy.loadPolicy", () => {
     expect(p.domains.scraping).toBe("me/skills@crawler");
     expect(p.log.path).toBe(path.join(os.homedir(), "custom/log.jsonl"));
     expect(p.log.retentionDays).toBe(7);
+  });
+
+  it("ignores the retired classifier.llm/model keys from older configs", () => {
+    fs.writeFileSync(
+      path.join(home, "metaskill.yaml"),
+      [
+        "version: 1",
+        "classifier:",
+        "  llm: always",
+        "  model: claude-haiku-4-5",
+        "  trivial_max_chars: 25",
+      ].join("\n"),
+    );
+    const p = loadPolicy();
+    expect(p.classifier).toEqual({ trivialMaxChars: 25 });
   });
 
   it("parses custom_domains and drops malformed entries", () => {

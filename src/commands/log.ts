@@ -19,7 +19,6 @@ export function logCommand(n: number): number {
         .filter((d) => !e.installed.includes(d.pkg))
         .map((d) => `${d.decision}:${d.pkg}(${d.installs},scan=${d.scan})`),
       `${e.latency_ms}ms`,
-      e.llm_used ? "llm" : null,
     ].filter(Boolean);
     process.stdout.write(parts.join(" ") + "\n");
   }

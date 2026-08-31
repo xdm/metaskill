@@ -29,7 +29,6 @@ function runCli(
         METASKILL_HOME: path.join(opts.home, ".metaskill"),
         METASKILL_SKILLS_CMD: `"${process.execPath}" "${STUB}"`,
         STUB_LOG: path.join(opts.home, "stub-calls.log"),
-        ANTHROPIC_API_KEY: "", // LLM off in tests
         ...opts.env,
       },
     });
@@ -112,7 +111,6 @@ describe("route end-to-end (stubbed skills CLI)", () => {
     expect(log[0].domains).toContain("xlsx");
     expect(log[0].domains).toContain("node");
     expect(log[0].installed).toEqual(["anthropics/skills@xlsx"]);
-    expect(log[0].llm_used).toBe(false);
     expect(log[0].prompt_hash).toMatch(/^sha256:/);
     const decisions = Object.fromEntries(log[0].discovered.map((d: any) => [d.pkg, d.decision]));
     expect(decisions["anthropics/skills@xlsx"]).toBe("auto");
@@ -194,7 +192,6 @@ describe("route end-to-end (stubbed skills CLI)", () => {
       .map((l) => JSON.parse(l));
     expect(log).toHaveLength(1);
     expect(log[0].domains).toEqual([]);
-    expect(log[0].llm_used).toBe(false); // no API key in tests
     fs.rmSync(home, { recursive: true, force: true });
   });
 

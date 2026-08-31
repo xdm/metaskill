@@ -16,7 +16,6 @@ function entry(ts: string): RouteLogEntry {
     discovered: [],
     installed: [],
     latency_ms: 10,
-    llm_used: false,
   };
 }
 
