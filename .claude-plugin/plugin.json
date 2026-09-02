@@ -1,7 +1,7 @@
 {
   "name": "metaskill",
   "displayName": "metaskill",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Finds, vets and installs the skills each task needs, before Claude answers.",
   "author": {
     "name": "xdm"
