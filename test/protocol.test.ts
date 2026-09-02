@@ -114,6 +114,20 @@ describe("protocolText", () => {
     expect(t).not.toMatch(/installs that skill for you/i);
   });
 
+  it("tells the model what a low relevance means and to decline on it", () => {
+    // Removing the hard relevance floor made the model's judgement the only
+    // filter, and `find` prints a number the block never explained — beside a
+    // policy reason ("publisher anthropics is allowlisted, scan clean") that
+    // reads as an endorsement. Measured against the real index, `tell me a
+    // joke` returns a 0.53-relevance account-research skill wearing exactly
+    // that reason. SKILL.md saying it is not enough: it loads on invocation,
+    // this block loads at session start.
+    const t = flat();
+    expect(t).toMatch(/low `relevance`/i);
+    expect(t).toMatch(/barely matched/i);
+    expect(t).toMatch(/decline it/i);
+  });
+
   it("says what to name when no capability phrase is obvious, without gating on it", () => {
     // "fix this failing test" names no capability, so without this the dodge
     // simply moves from "I've got this" to "I cannot form a query".
@@ -187,6 +201,15 @@ describe("skills/metaskill/SKILL.md", () => {
                          "Registry did not answer", "No skills found"]) {
       expect(protocolText(), `protocol names "${label}"`).toContain(label);
       expect(SKILL_MD, `SKILL.md names "${label}"`).toContain(label);
+    }
+  });
+
+  it("explains relevance the same way the protocol block does", () => {
+    // Two documents, one contract. A reference that omits the scale leaves a
+    // model that read only it with no way to weigh the number find prints.
+    for (const re of [/low `relevance`/i, /barely matched/i, /decline it/i]) {
+      expect(flatMd, `SKILL.md matches ${re}`).toMatch(re);
+      expect(protocolText().replace(/\s+/g, " "), `protocol matches ${re}`).toMatch(re);
     }
   });
 

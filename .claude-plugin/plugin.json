@@ -2,7 +2,7 @@
   "name": "metaskill",
   "displayName": "metaskill",
   "version": "0.6.0",
-  "description": "Finds, vets and installs the skills each task needs, before Claude answers.",
+  "description": "Finds and vets the skills each task needs, before Claude answers — and installs one only when you say yes.",
   "author": {
     "name": "xdm"
   },

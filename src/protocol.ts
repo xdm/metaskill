@@ -27,6 +27,14 @@ import { metaskillCmd } from "./paths.js";
 //     picks, `install` enforces policy (spec §4.4) — so the ask-the-user rule
 //     is now true of the command as a whole, and saying so is what stops a
 //     model reporting an install that never happened.
+//   - It says what a low `relevance` means and what to do about it. Removing
+//     the hard floor made the model's judgement the only filter, and `find`
+//     prints a number the model has never been told how to read — beside a
+//     policy reason ("publisher anthropics is allowlisted, scan clean") that
+//     reads as an endorsement. Measured: `find "tell me a joke"` returns a
+//     0.53-relevance account-research skill wearing exactly that reason. The
+//     equivalent sentence in SKILL.md is not enough on its own: SKILL.md
+//     loads on invocation, this block loads at session start.
 //   - It says what to name when no capability phrase is obvious ("fix this
 //     failing test" has none), because "I cannot form a query" is the next
 //     shape the escape hatch takes once "I've got this" is closed. It offers
@@ -73,9 +81,10 @@ export function protocolText(): string {
     "Act on what it prints:",
     "- `Already present:` — read that SKILL.md and follow it.",
     "- `Top matches` / `live search found` — judge which row, if any, fits the",
-    "  task. Then ask the user ONE question naming the package, its install",
-    "  count and its publisher, and install only on an explicit yes, with the",
-    "  command that line prints.",
+    "  task; a low `relevance` means it barely matched the words — decline it.",
+    "  Otherwise ask the user ONE question naming the package, its install count",
+    "  and its publisher; install only on an explicit yes, with the command it",
+    "  prints.",
     "- `Refused by policy` — no flag installs these. Never offer them.",
     "- `Registry did not answer` — not a miss. Retry once, or solve it.",
     "- `No skills found` — solve the task yourself, and say nothing about metaskill.",

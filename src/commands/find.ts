@@ -116,7 +116,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
 
     // Long tail: the index is a snapshot, so fall back to one live search.
     if (!hits.length) {
-      // 3s, not discoverRaw's 10s default. The protocol now tells the model to
+      // 4s, not discoverRaw's 10s default. The protocol now tells the model to
       // run `find` at the start of EVERY task, and most of those miss the local
       // index and land here. Ten silent seconds, several times a session, is
       // what teaches a model to quietly stop obeying a standing instruction —

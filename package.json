@@ -1,7 +1,7 @@
 {
   "name": "@xdma/metaskill",
   "version": "0.6.0",
-  "description": "Claude Code decides which skills a task needs, installs them safely from skills.sh under a trust policy, then solves the task.",
+  "description": "Claude Code works out which skills a task needs, vets them against a trust policy, installs them from skills.sh once you say yes, then solves the task.",
   "license": "MIT",
   "type": "module",
   "bin": {

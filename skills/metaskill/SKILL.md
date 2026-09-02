@@ -46,9 +46,11 @@ disk without the user's explicit yes, unless they have opted in by setting
 and even then it is `install` that acts, never `find`).
 
 `relevance` is BM25's report of how much of your query a row matched, on a
-scale that means the same thing whatever index is loaded. It is a signal for
-your judgement, not a verdict: a row can rank first and still have nothing to
-do with the task. If none of them fits, say so and solve the task yourself.
+scale that means the same thing whatever index is loaded. A full match sits
+around 1.0 or above; a low `relevance` means the row barely matched the words
+— decline it. It is a signal for your judgement, not a verdict: a row can
+rank first, carry a reassuring policy reason, and still have nothing to do
+with the task. If none of them fits, say so and solve the task yourself.
 
 Act on what it prints:
 

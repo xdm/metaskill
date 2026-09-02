@@ -4,12 +4,12 @@
     "name": "xdm",
     "url": "https://github.com/xdm"
   },
-  "description": "metaskill: Claude Code finds, vets and installs the skills each task needs.",
+  "description": "metaskill: Claude Code finds and vets the skills each task needs, and installs one only with your yes.",
   "plugins": [
     {
       "name": "metaskill",
       "displayName": "metaskill",
-      "description": "Finds, vets and installs the skills each task needs, before Claude answers.",
+      "description": "Finds and vets the skills each task needs, before Claude answers — and installs one only when you say yes.",
       "source": {
         "source": "npm",
         "package": "@xdma/metaskill"

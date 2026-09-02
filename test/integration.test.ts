@@ -1242,6 +1242,31 @@ describe("packaged assets", () => {
     }
   });
 
+  // The copy a user reads BEFORE installing metaskill. All three said
+  // "finds, vets and installs the skills each task needs" / "installs them
+  // safely", which stopped being true when `find` became rank-only and
+  // trust.auto_install shipped off: the storefront was promising an
+  // unattended install the product no longer performs. Nothing pinned these
+  // strings, which is how they drifted past a green suite.
+  it("the storefront copy promises no install the product will not do unattended", () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+    const plugin = JSON.parse(fs.readFileSync(path.join(ROOT, ".claude-plugin", "plugin.json"), "utf8"));
+    const market = JSON.parse(fs.readFileSync(path.join(ROOT, ".claude-plugin", "marketplace.json"), "utf8"));
+    const copy: Array<[string, string]> = [
+      ["package.json", pkg.description],
+      [".claude-plugin/plugin.json", plugin.description],
+      ["marketplace.json (marketplace)", market.description],
+      ["marketplace.json (plugin entry)", market.plugins[0].description],
+    ];
+    for (const [where, text] of copy) {
+      expect(text, where).toBeTruthy();
+      // No unqualified "and installs …" claim.
+      expect(text, where).not.toMatch(/vets and installs|installs them safely/i);
+      // …and the user's consent is named, not implied.
+      expect(text, where).toMatch(/\byes\b/i);
+    }
+  });
+
   it("SKILL.md stays within the 1500-token budget (spec 4.8)", () => {
     const md = fs.readFileSync(path.join(ROOT, "skills", "metaskill", "SKILL.md"), "utf8");
     // ~4 chars/token upper bound: 6000 chars ≈ 1500 tokens
