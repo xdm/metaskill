@@ -34,9 +34,11 @@ export function locateInstalled(skill: string): string | undefined {
 // nobody is watching. On timeout the caller downgrades the candidate to
 // `ask`; it never blocks the hook longer. Records the install in
 // ~/.metaskill/skills-lock.json,
-// `domain` and all — the query phrase that found it (or, for a manual
-// install, nothing) — purely so `metaskill list` has something to show under
-// MATCHED; nothing reads it back to make a decision.
+// `domain` and all — the (already-normalised) query phrase that found it, via
+// `install`'s own `--matched` flag, or nothing for a manual install that
+// passed none. `metaskill list` shows it under MATCHED, and it is also read
+// back: find.ts's alreadyPresent() compares a later query against this exact
+// field to short-circuit a repeat of the phrase that found this skill.
 export async function installSkill(
   pkg: string,
   domain: string | undefined,

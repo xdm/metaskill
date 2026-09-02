@@ -738,6 +738,40 @@ describe("find -> install --matched: the phrase a confirmed install records", ()
     fs.rmSync(home, { recursive: true, force: true });
   });
 
+  it("the live-fallback branch (no local index hit) also carries --matched through", async () => {
+    // Fix round 1: this branch printed `install <pkg> --force` with no
+    // --matched at all, so a live-only hit's lock entry never got a domain
+    // and `list` showed "-" under MATCHED — the exact symptom this task
+    // exists to remove, just reached via the OTHER of find's two "confirmed
+    // install" branches. No index.json is seeded at all (loadIndex() reads
+    // METASKILL_INDEX, finds nothing, returns null), so `find` gets zero
+    // local hits and falls through to the live search against the stub's
+    // "reddit" fixture instead of the ranked "Top matches" branch above.
+    const home = freshHome("find-install-live-roundtrip");
+
+    const found = await runCli(["find", "reddit"], { home });
+    expect(found.code).toBe(0);
+    expect(found.stdout).toContain("live search found modelscope.cn@reddit-helper");
+
+    const cmdLine = found.stdout.split("\n").find((l) => l.includes("Ask the user one question before installing"));
+    expect(cmdLine).toBeDefined();
+    const pkgMatch = /install (\S+@\S+) --force/.exec(cmdLine!);
+    expect(pkgMatch?.[1]).toBe("modelscope.cn@reddit-helper");
+    const matchedArg = /--matched "([^"]*)"/.exec(cmdLine!)?.[1];
+    expect(matchedArg).toBe("reddit");
+
+    const installed = await runCli(
+      ["install", pkgMatch![1]!, "--force", "--matched", matchedArg!],
+      { home },
+    );
+    expect(installed.code).toBe(0);
+    expect(readLockFile(home)["modelscope.cn@reddit-helper"]).toMatchObject({ domain: "reddit" });
+
+    const list = await runCli(["list"], { home });
+    expect(list.stdout).toMatch(/^reddit-helper\s+modelscope\.cn@reddit-helper\s+v1\.2\.3\s+reddit\s+/m);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
   it("install sanitises --matched exactly as find sanitises its query", async () => {
     const home = freshHome("install-matched-sanitise");
     seedIndex(home, [

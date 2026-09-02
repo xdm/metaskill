@@ -166,7 +166,11 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       const top = [...cands].sort((a, b) => b.installs - a.installs)[0]!;
       process.stdout.write(
         `[metaskill] Not in the local index; live search found ${top.pkg} (${top.installs} installs).\n` +
-          `Ask the user one question before installing; on an explicit yes run: ${metaskillCmd()} install ${top.pkg} --force\n${pluginLine}`,
+          // Same --matched carry as the local-index branch below: whichever
+          // path led to this confirmed install, the lock should end up with
+          // the phrase that found it, or alreadyPresent's short-circuit only
+          // works for half of `find`'s outcomes.
+          `Ask the user one question before installing; on an explicit yes run: ${metaskillCmd()} install ${top.pkg} --force --matched "${q}"\n${pluginLine}`,
       );
       logFind([]);
       return 0;
