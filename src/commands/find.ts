@@ -101,14 +101,20 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       // only on this path. route.ts keeps the 10s default: it runs once per
       // prompt with no model waiting on the result.
       //
-      // 4s specifically, and it is a measured number, not a round one. `npx -y
-      // skills@1.5.23 find` costs 2.86s / 3.06s / 3.08s on three warm runs
-      // (macOS, warm npx cache). 3s was tried and sits ON that latency rather
-      // than above it, which made a long-tail lookup close to a coin flip
-      // while still charging the full wait; 4s clears the observed maximum by
-      // ~0.9s. Do not round it back down to 3 (the lookup stops working and
-      // the cost stays) or back up to 10 (the wait is what makes a model
-      // abandon the protocol). Re-measure before changing it.
+      // 4s is margin over a median that moves, not a threshold with a right
+      // answer. `npx -y skills@1.5.23 find` measured 2.86 / 3.06 / 3.08s warm
+      // on one day and 2.0-2.5s on another; registry latency is bimodal and
+      // drifts, and on the second day roughly one call in six exceeded the
+      // budget at 3s AND at 4s alike. So 4s does not rescue a dead path — it
+      // buys headroom over a latency nobody controls, while staying far below
+      // the 10s that made a model give up on the protocol. Do not round it
+      // back to 3 (less margin, same tail) or up to 10 (the wait is the thing
+      // being fixed), and re-measure rather than reasoning about it.
+      //
+      // The tail never goes to zero at any budget, which is exactly why the
+      // `Registry did not answer` branch below exists: whatever the timeout,
+      // some calls will not come back, and that fact must not reach the model
+      // disguised as "no such skill exists".
       let liveFailed = false;
       const cands = await discoverByQuery(q, {
         timeoutMs: 4_000,

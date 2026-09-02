@@ -759,6 +759,18 @@ describe("packaged assets", () => {
     expect(cmds.some((c: string) => c.endsWith(" route"))).toBe(true);
     expect(cmds.some((c: string) => c.endsWith(" sync"))).toBe(true);
 
+    // The plugin channel's SessionStart matcher, which nothing pinned before:
+    // settings.ts (the standalone `init` channel) is asserted in three places
+    // and this file in none, so `compact` could have been dropped here with a
+    // green suite. Every source that can start a session without the protocol
+    // must be listed — `compact` above all, since auto-compact fires on its
+    // own and is the ordinary way a long session loses injected context.
+    const sessionStart = hooks.hooks.SessionStart as Array<{ matcher?: string; hooks: unknown[] }>;
+    expect(sessionStart).toHaveLength(1);
+    for (const source of ["startup", "resume", "clear", "compact"]) {
+      expect(sessionStart[0]!.matcher, source).toContain(source);
+    }
+
     const market = JSON.parse(fs.readFileSync(path.join(ROOT, ".claude-plugin", "marketplace.json"), "utf8"));
     expect(market.plugins[0].source).toEqual({ source: "npm", package: pkg.name });
 

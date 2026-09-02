@@ -25,9 +25,18 @@ import { metaskillCmd } from "./paths.js";
 //     publisher, or 5000+ installs with a clean scan, with nobody asked — a
 //     model told only "run:" has no basis to warn the user first, and the
 //     ask-on-yes rule below is true of one branch, not of the command.
-//   - It says what to do when no capability phrase is obvious ("fix this
+//   - It says what to name when no capability phrase is obvious ("fix this
 //     failing test" has none), because "I cannot form a query" is the next
-//     shape the escape hatch takes once "I've got this" is closed.
+//     shape the escape hatch takes once "I've got this" is closed. It offers
+//     that as guidance and NOT as a gate: an earlier draft ended the clause
+//     with "skip only when nothing like that is in play", which handed back
+//     the very judgement "run it even when you are sure" exists to forbid —
+//     eleven lines under that sentence. The enumeration must never terminate
+//     in a condition the model can answer "no" to.
+//   - It does NOT warn against `npx skills add`. That duplicates SKILL.md
+//     Rule 2, is enforced in code (a deny cannot be bypassed by any flag), and
+//     spends scarce lines naming a bypass to a reader who was not looking for
+//     one.
 //   - `Registry did not answer` is listed separately from `No skills found`.
 //     A live lookup that timed out is not evidence that no skill exists, and a
 //     model given one label for both facts will report a coverage gap it never
@@ -55,8 +64,7 @@ export function protocolText(): string {
     "The user's prompt may be in any language; the query is always English,",
     "derived from the task rather than translated. Name the artefact or domain,",
     "not the action: a file format, framework, database, platform API, or a",
-    "documented craft like SEO or copywriting — skip only when nothing like that",
-    "is in play.",
+    "documented craft like SEO or copywriting.",
     "",
     "Act on what it prints:",
     "- `Installed now:` / `Already present:` — read that SKILL.md and follow it.",
@@ -66,7 +74,5 @@ export function protocolText(): string {
     "- `Install timed out` / `failed` — tell the user; never retry silently.",
     "- `Registry did not answer` — not a miss. Retry once, or solve it.",
     "- `No skills found` — solve the task yourself, and say nothing about metaskill.",
-    "",
-    "Never run `npx skills add` or edit ~/.claude/skills directly.",
   ].join("\n");
 }

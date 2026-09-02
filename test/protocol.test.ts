@@ -100,13 +100,17 @@ describe("protocolText", () => {
     expect(t).toMatch(/tell the user what it installed/i);
   });
 
-  it("says what to query when no capability phrase is obvious", () => {
+  it("says what to name when no capability phrase is obvious, without gating on it", () => {
     // "fix this failing test" names no capability, so without this the dodge
     // simply moves from "I've got this" to "I cannot form a query".
     const t = flat();
     expect(t).toMatch(/name the artefact or domain/i);
     expect(t).toMatch(/not the action/i);
-    expect(t).toMatch(/skip only when nothing like that is in play/i);
+    // ...but the guidance must not end in a condition. An earlier draft closed
+    // it with "skip only when nothing like that is in play", which handed back
+    // the judgement `Run it even when you are sure` exists to forbid — and sat
+    // eleven lines under that sentence, where it wins at reading speed.
+    expect(t).not.toMatch(/\bskip\b/i);
   });
 
   it("stays short enough to inject every session", () => {
@@ -117,5 +121,18 @@ describe("protocolText", () => {
     // installed. 1400 is the original whole-text budget, kept as-is.
     const prose = protocolText().replace(process.execPath, "").replace(cliEntryPath(), "");
     expect(prose.length).toBeLessThan(1400);
+  });
+
+  it("bounds the string actually injected, not only its prose", () => {
+    // The prose budget above strips both absolute paths, on the grounds that
+    // no rewording buys them back — which is true, and leaves the thing the
+    // session actually pays for measured by nothing. Bound it here against a
+    // deliberately long install: a 100-char interpreter (nvm under
+    // "Application Support" with a long username) and a 120-char plugin-cache
+    // CLI path. ~1600 chars is ~400 tokens, once per session start.
+    const injected = protocolText()
+      .replace(process.execPath, "n".repeat(100))
+      .replace(cliEntryPath(), "c".repeat(120));
+    expect(injected.length).toBeLessThan(1600);
   });
 });
