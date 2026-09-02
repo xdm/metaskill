@@ -7,6 +7,7 @@ import { readLock, writeLock } from "../lock.js";
 import { pruneLog } from "../log.js";
 import { agentsSkillsDir, claudeUserSkillsDir, skillsCmd } from "../paths.js";
 import { loadPolicy } from "../policy.js";
+import { protocolText } from "../protocol.js";
 import { readState, writeState } from "../state.js";
 import path from "node:path";
 
@@ -45,18 +46,28 @@ function emit(context: string): void {
 // no `check` command (verified v1.5.23), so: allowlisted publishers get
 // `skills update <names> -g -y`; everything else gets a notice line.
 export async function syncCommand(opts: { force?: boolean } = {}): Promise<number> {
+  // The protocol is the product, so it goes out before the 24h gate, before the
+  // lock is read, and before any network call: neither an early return, nor a
+  // 12-20s index download, nor a hook killed mid-download may cost the session
+  // its protocol. Exactly one emit() per run — a second JSON line on stdout is
+  // not a documented hook contract — so notices about the slow work below are
+  // parked in state.json and ride out on the NEXT session's emit.
+  const state = readState();
+  const notices = state.pendingNotices ?? [];
+  emit([protocolText(), ...notices].join("\n"));
   try {
-    const state = readState();
+    if (notices.length) writeState({ ...state, pendingNotices: [] });
     if (!opts.force && state.lastSyncTs && Date.now() - Date.parse(state.lastSyncTs) < DAY_MS) {
       return 0;
     }
     // Stamp first: a failing registry must not make every session retry.
-    writeState({ lastSyncTs: new Date().toISOString() });
+    // Merge, never replace: pendingNotices must survive this write.
+    writeState({ ...readState(), lastSyncTs: new Date().toISOString() });
 
     // Runs unconditionally in this branch — even with no skills locked — so
     // the local index still gets the upgrade path off the packaged snapshot.
-    // The confirmation line below is only emitted once `lines` exists; a
-    // later task makes every exit path emit its protocol block.
+    // The protocol block above is already out, so however long this takes, and
+    // whether or not it succeeds, the session has what it needs.
     const idx = await refreshIndex();
 
     const policy = loadPolicy();
@@ -95,7 +106,7 @@ export async function syncCommand(opts: { force?: boolean } = {}): Promise<numbe
           .join(", ")} — run \`metaskill update\` to update them.`,
       );
     }
-    if (lines.length) emit(lines.join("\n"));
+    if (lines.length) writeState({ ...readState(), pendingNotices: lines });
     return 0;
   } catch (err) {
     process.stderr.write(`[metaskill] sync error: ${(err as Error).message}\n`);

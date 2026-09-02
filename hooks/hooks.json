@@ -13,12 +13,12 @@
     ],
     "SessionStart": [
       {
-        "matcher": "startup|resume",
+        "matcher": "startup|resume|clear",
         "hooks": [
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/cli.js\" sync",
-            "timeout": 60
+            "timeout": 120
           }
         ]
       }

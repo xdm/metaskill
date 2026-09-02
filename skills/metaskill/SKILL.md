@@ -5,9 +5,11 @@ description: Protocol for handling the [metaskill] block in context. Use in ever
 
 # metaskill protocol
 
-metaskill is a UserPromptSubmit hook that classifies each task, auto-installs
-trusted skills from skills.sh, and injects a `[metaskill]` block into your
-context. This skill tells you how to act on that block.
+metaskill injects `[metaskill]` blocks into your context from two hooks: a
+SessionStart block carrying the standing `find` protocol, and a
+UserPromptSubmit block naming skills it classified, auto-installed, or wants
+confirmation for. Those blocks are self-contained — this skill is the longer
+reference for the same rules, not the only place they live.
 
 ## Reading the `[metaskill]` block
 
@@ -42,15 +44,24 @@ it. Example:
 - If no (or no clear yes), solve the task without it. Never install on an
   assumed or implied approval.
 
-## On "Task not classified"
+## On `find`
 
-You are the classifier here. If a specialized skill could genuinely help the
-task, derive a short English capability phrase (2-4 words, e.g. "reddit
-automation", "invoice ocr") and run the `route --search "..."` command the
-block gives you via Bash. Read its output and act on it: use what it
-installed, ask the user the one question if it needs confirmation, or just
-solve the task if nothing was found. Do not install anything outside that
-command.
+Every session opens with a `[metaskill] Standing protocol` block naming a
+`find` command. It stands whether or not this skill is loaded: before you
+start a task a specialised skill would do better, derive a 2-4 word English
+capability phrase from the task ("reddit automation", "invoice ocr") and run
+that command via Bash. The user's prompt may be in any language; the query is
+always English, and you derive it from the task rather than translating the
+prompt. Then act on what it prints:
+
+- **`Installed now:` / `Already present:`** — read that SKILL.md and follow it.
+- **`Top matches for ...`** — nothing qualified for auto-install. Ask the user
+  ONE question naming the package, its install count and its publisher, and
+  install only on an explicit yes.
+- **`No skills found`** — solve the task yourself, and say nothing about
+  metaskill.
+
+Do not install anything outside that command.
 
 ## On "Plugin available"
 

@@ -104,4 +104,8 @@ export interface CacheFile {
 
 export interface StateFile {
   lastSyncTs?: string;
+  // Notices about work sync did AFTER it emitted this session's protocol block
+  // (index refresh, skill updates). sync emits exactly once, first thing, so
+  // these ride out on the next session start instead of a second stdout line.
+  pendingNotices?: string[];
 }

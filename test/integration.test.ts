@@ -71,6 +71,14 @@ function readLockFile(home: string): Record<string, { skill: string; version?: s
   }
 }
 
+function readStateFile(home: string): { lastSyncTs?: string; pendingNotices?: string[] } {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(home, ".metaskill", "state.json"), "utf8"));
+  } catch {
+    return {};
+  }
+}
+
 function hookInput(prompt: string, cwd: string, field = "user_prompt"): string {
   return JSON.stringify({ session_id: "test-session", cwd, [field]: prompt, hook_event_name: "UserPromptSubmit" });
 }
@@ -581,18 +589,28 @@ describe("sync end-to-end (spec 4.3)", () => {
 
     const r = await runCli(["sync"], { home, env: { STUB_UPDATE_VERSION: "9.9.9" } });
     expect(r.code).toBe(0);
+    // Exactly one JSON line per run: a second line on stdout is not a
+    // documented hook contract.
+    expect(r.stdout.trim().split("\n")).toHaveLength(1);
     const out = JSON.parse(r.stdout) as any;
     expect(out.hookSpecificOutput.hookEventName).toBe("SessionStart");
-    expect(out.hookSpecificOutput.additionalContext).toContain("Updated skills: xlsx");
-    expect(out.hookSpecificOutput.additionalContext).toContain("baz");
+    expect(out.hookSpecificOutput.additionalContext).toContain("[metaskill] Standing protocol");
+
+    // The update happened AFTER the emit, so its notice is parked in
+    // state.json rather than emitted — it rides out on the next session.
+    expect(out.hookSpecificOutput.additionalContext).not.toContain("Updated skills: xlsx");
+    expect(readStateFile(home).pendingNotices).toEqual([
+      "[metaskill] Updated skills: xlsx.",
+      expect.stringContaining("baz"),
+    ]);
 
     // METASKILL_SKIP_INDEX_REFRESH (set for every runCli process, see above)
-    // must have kept this run off the network: no "index refreshed" line,
+    // must have kept this run off the network: no "index refreshed" notice,
     // and no index.json ever landed in the sandboxed home. A real download
     // succeeding here would write that file (see index-refresh.test.ts and
     // task-5-report.md's real-download measurements) — its absence is
     // direct, black-box proof that refreshIndex's skip path was taken.
-    expect(out.hookSpecificOutput.additionalContext).not.toContain("index refreshed");
+    expect(readStateFile(home).pendingNotices!.join("\n")).not.toContain("index refreshed");
     expect(fs.existsSync(path.join(home, ".metaskill", "index.json"))).toBe(false);
 
     // stub was asked to update ONLY the allowlisted skill
@@ -604,10 +622,38 @@ describe("sync end-to-end (spec 4.3)", () => {
     expect(readLockFile(home)["anthropics/skills@xlsx"]!.version).toBe("9.9.9");
     expect(readLockFile(home)["foo/bar@baz"]!.version).toBe("0.1.0");
 
-    // second run within 24h: gated, silent
+    // Second run within 24h: the 24h gate closes before any work — but the
+    // protocol still goes out, and it carries the parked notices with it.
     const r2 = await runCli(["sync"], { home, env: { STUB_UPDATE_VERSION: "9.9.9" } });
-    expect(r2.stdout).toBe("");
+    expect(r2.stdout.trim().split("\n")).toHaveLength(1);
+    const ctx2 = (JSON.parse(r2.stdout) as any).hookSpecificOutput.additionalContext as string;
+    expect(ctx2).toContain("[metaskill] Standing protocol");
+    expect(ctx2).toContain("Updated skills: xlsx");
+    expect(ctx2).toContain("baz");
     expect(stubCalls(home).filter((c) => c[0] === "update")).toHaveLength(1);
+
+    // Third run: notices surfaced once and were cleared — they must not
+    // repeat on every session thereafter.
+    const r3 = await runCli(["sync"], { home, env: { STUB_UPDATE_VERSION: "9.9.9" } });
+    const ctx3 = (JSON.parse(r3.stdout) as any).hookSpecificOutput.additionalContext as string;
+    expect(ctx3).toContain("[metaskill] Standing protocol");
+    expect(ctx3).not.toContain("Updated skills");
+    expect(readStateFile(home).pendingNotices).toEqual([]);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("emits the protocol on a fresh home with nothing installed", async () => {
+    // The two early returns (24h gate above, empty lock here) both sit AFTER
+    // the emit. v1's central defect was sessions that received no metaskill
+    // context at all; no exit path may reproduce it.
+    const home = freshHome("sync-fresh");
+    const r = await runCli(["sync"], { home });
+    expect(r.code).toBe(0);
+    expect(r.stdout.trim().split("\n")).toHaveLength(1);
+    const ctx = (JSON.parse(r.stdout) as any).hookSpecificOutput.additionalContext as string;
+    expect(ctx).toContain("[metaskill] Standing protocol");
+    expect(ctx).toMatch(/node "[^"]*cli\.js" find "/);
+    expect(stubCalls(home)).toHaveLength(0);
     fs.rmSync(home, { recursive: true, force: true });
   });
 });
