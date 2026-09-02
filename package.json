@@ -9,6 +9,7 @@
   },
   "files": [
     "dist/cli.js",
+    "index-snapshot.json",
     "skills",
     "commands",
     "hooks",
@@ -31,7 +32,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit && node scripts/build.mjs",
     "build:index": "npm run build && node dist/index-builder.js index.json",
-    "prepublishOnly": "npm run build && vitest run",
+    "snapshot": "node dist/snapshot-cli.js",
+    "prepublishOnly": "npm run build && npm run snapshot && vitest run",
     "test": "npm run build && vitest run",
     "test:unit": "vitest run --exclude test/integration.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"

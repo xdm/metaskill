@@ -28,3 +28,8 @@ chmodSync("dist/cli.js", 0o755);
 // workflow can run it straight from a checkout with no install step.
 await build({ ...common, entryPoints: ["src/index/cli.ts"], outfile: "dist/index-builder.js" });
 chmodSync("dist/index-builder.js", 0o755);
+
+// Publish-time entry: downloads the full index and trims it to the
+// known-installs snapshot shipped in the npm package.
+await build({ ...common, entryPoints: ["src/index/snapshot-cli.ts"], outfile: "dist/snapshot-cli.js" });
+chmodSync("dist/snapshot-cli.js", 0o755);
