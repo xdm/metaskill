@@ -58,19 +58,28 @@ Between pressing Enter and Claude's first token:
 2. Claude derives a short capability phrase and runs:
    `metaskill find "xlsx export formulas"`.
 3. `find` ranks a local index of the registry and gets a hit:
-   `anthropics/skills@xlsx`, 158K installs, scan clean.
+   `anthropics/claude-agent-sdk-demos@xlsx` — a small skill (159 installs)
+   from an allowlisted publisher, scan clean.
 4. The trust policy says `anthropics` is allowlisted with a clean scan →
-   installs automatically, version pinned.
+   installs automatically, version pinned. The install-count threshold plays
+   no part here: the allowlist skips it entirely.
 5. `find` prints, and Claude reads it before doing anything else:
 
 ```
-[metaskill] Installed now: anthropics/skills@xlsx (v1.2.3) -> ~/.claude/skills/xlsx/SKILL.md
+[metaskill] Installed now: anthropics/claude-agent-sdk-demos@xlsx (v1.2.3) -> /Users/you/.claude/skills/xlsx/SKILL.md
 Read that SKILL.md and follow it.
 ```
 
 and solves the task **with** the skill. A local index hit like this is one
 fast subprocess call; installing the skill — or, on an index miss, the one
 live registry search, capped at 4 seconds — is what actually takes time.
+
+As of this writing, the registry's much bigger, better-known
+`anthropics/skills@xlsx` (161,878 installs) never gets picked here: the local
+index marks that specific package `dirty` (next section), and `dirty` is
+denied before the allowlist is even consulted, however a query ranks it. This
+walkthrough is a live snapshot, not a promise — which package wins depends on
+the registry on the day you read it.
 
 ## Why it's safe to let an agent install things
 
@@ -122,11 +131,11 @@ What backs it up:
   goes out first.
 - **The registry index ships in the package and refreshes itself.** A fresh
   install can look skills up offline immediately: the npm package carries a
-  trimmed snapshot — the ~4,800 skills with a real install count, about
-  0.34 MB gzipped — covering everything the policy could actually auto-install
-  on sight. `sync` upgrades that to the full index, currently around 43,585
-  skills across 794 repositories, from a nightly GitHub Release, at most once
-  every 24 hours. That download is uncompressed and currently about 22.6 MB,
+  trimmed snapshot — the 4,831 skills with a real install count, about
+  0.42 MB gzipped — covering everything the policy could actually auto-install
+  on sight. `sync` upgrades that to the full index, currently 43,714 skills
+  across 793 repositories, from a nightly GitHub Release, at most once every
+  24 hours. That download is uncompressed and currently about 23.8 MB,
   budgeted 45 seconds; a failed refresh just keeps the previous copy.
 - **Your prompt stays private, in any language.** `find`'s registry queries
   are a short English capability phrase Claude derives from the task (e.g.
@@ -256,7 +265,8 @@ metaskill update [names...] [--force]
 metaskill list                                      # what metaskill installed (alias: ls)
 metaskill plugins [words]                           # search plugin marketplaces (suggest only)
 metaskill log [-n N] [--stats]                      # routing decisions, or find follow-through
-metaskill route | sync                              # hook bodies: route logs the prompt; sync injects the protocol
+metaskill route                                     # UserPromptSubmit hook body: logs the prompt
+metaskill sync [--force]                            # SessionStart hook body: injects the protocol, refreshes the index
 ```
 
 `--force` bypasses `ask`, never `deny`.
@@ -267,18 +277,19 @@ What has metaskill installed so far:
 
 ```
 $ metaskill list
-SKILL  PACKAGE                 VERSION  MATCHED               INSTALLED   STATUS
-xlsx   anthropics/skills@xlsx  v1.2.3   xlsx export formulas  2026-09-02  ok
+SKILL  PACKAGE                 VERSION  MATCHED                          INSTALLED   STATUS
+xlsx   anthropics/skills@xlsx  v1.2.3   spreadsheet formulas automation  2026-09-02  ok
 ```
 
 Why, and what it decided along the way — `route` logs every prompt silently,
-`find` logs every lookup:
+`find` logs every lookup (this is a separate, illustrative run — not a
+continuation of the walkthrough above):
 
 ```
 $ metaskill log -n 3
-2026-09-02T12:51:23.589Z domains=[] 1ms
-2026-09-02T12:51:23.645Z domains=[find:xlsx export formulas] installed=[anthropics/skills@xlsx] 26ms
-2026-09-02T12:51:23.676Z domains=[find:scraping] 2ms
+2026-09-02T13:23:07.585Z domains=[] 0ms
+2026-09-02T13:23:07.640Z domains=[find:spreadsheet formulas automation] installed=[anthropics/skills@xlsx] 26ms
+2026-09-02T13:23:07.668Z domains=[find:scraping] 2ms
 ```
 
 The first line is a plain prompt (`route` — nothing installed, nothing to
