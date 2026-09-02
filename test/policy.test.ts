@@ -78,11 +78,34 @@ describe("policy.decide (spec 4.5 decision table)", () => {
     expect(v.reason).toMatch(/no real install count/);
   });
 
+  it("asks about an estimated skill even from an allowlisted publisher", () => {
+    const p = defaultPolicy();
+    const c = {
+      pkg: "anthropics/skills@guess",
+      publisher: "anthropics",
+      skillName: "guess",
+      installs: 999999,
+      url: "",
+      estimated: true,
+    };
+    const v = decide(c, { status: "clean", findings: [], advisories: [] }, p);
+    expect(v.decision).toBe("ask");
+    expect(v.reason).toMatch(/no real install count/);
+  });
+
   it("does not let the allowlist waive a dirty scan", () => {
     const p = defaultPolicy();
     const c = { pkg: "anthropics/skills@xlsx", publisher: "anthropics", skillName: "xlsx", installs: 500000, url: "" };
     const v = decide(c, { status: "dirty", findings: ["os.environ in scripts/run.py"], advisories: [] }, p);
     expect(v.decision).toBe("deny");
+  });
+
+  it("asks about an allowlisted publisher's skill when the scan carries advisories", () => {
+    const p = defaultPolicy();
+    const c = { pkg: "anthropics/skills@sketchy", publisher: "anthropics", skillName: "sketchy", installs: 999999, url: "" };
+    const v = decide(c, { status: "clean", findings: [], advisories: ['"curl " found in SKILL.md'] }, p);
+    expect(v.decision).toBe("ask");
+    expect(v.reason).toContain("curl ");
   });
 
   it("still auto-installs an allowlisted publisher with a clean scan below the threshold", () => {
