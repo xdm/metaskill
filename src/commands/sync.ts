@@ -10,6 +10,7 @@ import { agentsSkillsDir, claudeUserSkillsDir, skillsCmd } from "../paths.js";
 import { loadPolicy } from "../policy.js";
 import { protocolText } from "../protocol.js";
 import { readState, writeState } from "../state.js";
+import type { StateFile } from "../types.js";
 import { blockedByScan } from "./update.js";
 import path from "node:path";
 
@@ -54,8 +55,21 @@ export async function syncCommand(opts: { force?: boolean } = {}): Promise<numbe
   // its protocol. Exactly one emit() per run — a second JSON line on stdout is
   // not a documented hook contract — so notices about the slow work below are
   // parked in state.json and ride out on the NEXT session's emit.
-  const state = readState();
-  const notices = state.pendingNotices ?? [];
+  //
+  // readState() is the only work that happens before emit(), and it sat
+  // outside this guard: readJsonFile swallows a read or parse error, but a
+  // state.json holding the literal `null` parses fine and then throws on
+  // `.pendingNotices`, and statePath() itself throws with no resolvable home.
+  // Either one cost the session its protocol. Now the worst case is losing
+  // one session's parked notices.
+  let state: StateFile = {};
+  try {
+    const read: unknown = readState();
+    if (read && typeof read === "object") state = read as StateFile;
+  } catch {
+    /* no parked notices this session */
+  }
+  const notices = Array.isArray(state.pendingNotices) ? state.pendingNotices : [];
   emit([protocolText(), ...notices].join("\n"));
   try {
     if (notices.length) writeState({ ...state, pendingNotices: [] });

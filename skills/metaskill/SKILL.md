@@ -35,16 +35,24 @@ from the task ("reddit automation", "invoice ocr") and run that command via
 Bash. Run it even when you are sure no skill is needed — checking that is its
 job. Once per task, not once per session; only pure conversation is exempt.
 The user's prompt may be in any language; the query is always English, and you
-derive it from the task rather than translating the prompt. Then act on what
-it prints:
+derive it from the task rather than translating the prompt.
+
+`find` is not only a lookup. On a match the trust policy already trusts — an
+allowlisted publisher with a clean scan, or 5000+ installs with a clean scan —
+it installs that skill for you, unasked and unattended, and only then prints.
+Tell the user what it installed. Then act on what it prints:
 
 - **`Installed now:` / `Already present:`** — read that SKILL.md and follow it.
 - **`Top matches for ...`** / **`live search found ...`** — nothing qualified
   for auto-install. Ask the user ONE question naming the package, its install
   count and its publisher, then install only on an explicit yes, using the
   command that line prints.
+- **`Refused by policy`** — those packages are not installable by any flag.
+  Never offer them; do not ask about them.
 - **`Install timed out`** / **`Install failed`** — tell the user; never retry
   silently.
+- **`Registry did not answer`** — a lookup that never completed, not evidence
+  that no skill exists. Run `find` once more, or solve the task without one.
 - **`No skills found`** — solve the task yourself, and say nothing about
   metaskill.
 

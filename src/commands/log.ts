@@ -12,10 +12,15 @@ import type { RouteLogEntry } from "../types.js";
 // before/after.
 const LOOKUP_SESSIONS = new Set(["find", "search", "manual"]);
 
+// `pct` is capped at 100. finds > prompts is a real, ordinary state — the
+// protocol asks for a find per TASK while route logs one row per PROMPT, so a
+// single prompt carrying three tasks legitimately produces three finds — and
+// "follow-through=300%" reads as a broken counter, not as good news. The
+// uncapped truth is still available: prompts and finds are printed raw.
 export function followThrough(entries: RouteLogEntry[]): { prompts: number; finds: number; pct: number } {
   const finds = entries.filter((e) => LOOKUP_SESSIONS.has(e.session)).length;
   const prompts = entries.length - finds;
-  return { prompts, finds, pct: prompts ? Math.round((finds / prompts) * 100) : 0 };
+  return { prompts, finds, pct: prompts ? Math.min(100, Math.round((finds / prompts) * 100)) : 0 };
 }
 
 // `metaskill log [-n N] [--stats]` — human-readable tail of the JSONL log,
@@ -25,7 +30,19 @@ export function logCommand(n: number, opts: { stats?: boolean } = {}): number {
   const policy = loadPolicy();
   if (opts.stats) {
     const { prompts, finds, pct } = followThrough(readLogEntries(policy));
-    process.stdout.write(`prompts=${prompts} finds=${finds} follow-through=${pct}%  (baseline 2026-08-31: 3%)\n`);
+    // With no prompts logged there is no ratio to report. Printing
+    // "follow-through=0%" for prompts=0 finds=1 states the opposite of what
+    // the log holds — a lookup ran, and nothing it could have followed did.
+    if (prompts === 0) {
+      process.stdout.write(
+        `prompts=0 finds=${finds} — no prompts logged yet, so there is no follow-through ratio.\n`,
+      );
+      return 0;
+    }
+    const note = finds > prompts ? "  (more finds than prompts — a prompt can carry several tasks)" : "";
+    process.stdout.write(
+      `prompts=${prompts} finds=${finds} follow-through=${pct}%  (baseline 2026-08-31: 3%)${note}\n`,
+    );
     return 0;
   }
   const entries = readLogEntries(policy, n);

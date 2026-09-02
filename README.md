@@ -57,29 +57,48 @@ Between pressing Enter and Claude's first token:
    run `metaskill find` before starting any task — this one included.
 2. Claude derives a short capability phrase and runs:
    `metaskill find "xlsx export formulas"`.
-3. `find` ranks a local index of the registry and gets a hit:
-   `anthropics/claude-agent-sdk-demos@xlsx` — a small skill (159 installs)
-   from an allowlisted publisher, scan clean.
-4. The trust policy says `anthropics` is allowlisted with a clean scan →
-   installs automatically, version pinned. The install-count threshold plays
-   no part here: the allowlist skips it entirely.
-5. `find` prints, and Claude reads it before doing anything else:
+3. `find` ranks a local index of the registry, keeps the top five, and runs
+   each one past the trust policy:
 
 ```
-[metaskill] Installed now: anthropics/claude-agent-sdk-demos@xlsx (v1.2.3) -> /Users/you/.claude/skills/xlsx/SKILL.md
-Read that SKILL.md and follow it.
+[metaskill] Top matches for "xlsx export formulas" — none auto-installable, ask the user ONE question before installing any:
+  aiskillstore/marketplace@xlsx (237 installs, scan=unknown) [ask: publisher aiskillstore not allowlisted]
+    Spreadsheet toolkit (.xlsx/.csv). Create/edit with formulas/formatting, analyze data, visualization, recalculate formulas, for spreadsheet p
+  davila7/claude-code-templates@xlsx (949 installs, scan=clean) [ask: publisher davila7 not allowlisted]
+    Spreadsheet toolkit (.xlsx/.csv). Create/edit with formulas/formatting, analyze data, visualization, recalculate formulas, for spreadsheet p
+  aaaaqwq/agi-super-team@xlsx (~0 est installs, scan=clean) [ask: no real install count (0 estimated from siblings)]
+    Comprehensive spreadsheet creation, editing, and analysis with support for formulas, formatting, data analysis, and visualization. When Clau
+  ailabs-393/ai-labs-claude-skills@xlsx (876 installs, scan=clean) [ask: publisher ailabs-393 not allowlisted]
+    Comprehensive spreadsheet creation, editing, and analysis with support for formulas, formatting, data analysis, and visualization. When Clau
+  anthropics/claude-agent-sdk-demos@xlsx (159 installs, scan=clean) [auto: publisher anthropics is allowlisted, scan clean]
+    Comprehensive spreadsheet creation, editing, and analysis with support for formulas, formatting, data analysis, and visualization. When Clau
+On an explicit yes run: "/Users/you/.nvm/versions/node/v24.17.0/bin/node" "/Users/you/.metaskill/bin/dist/cli.js" install <pkg> --force
 ```
 
-and solves the task **with** the skill. A local index hit like this is one
-fast subprocess call; installing the skill — or, on an index miss, the one
-live registry search, capped at 4 seconds — is what actually takes time.
+4. Nothing there installs itself. **Only the top-ranked hit is ever installed
+   unattended**, and the top-ranked hit here — 237 installs, no scan verdict,
+   publisher not on your allowlist — is not one your policy trusts. The
+   allowlisted, clean `anthropics/claude-agent-sdk-demos@xlsx` further down
+   the list is marked `auto`, and is still not installed on its own: a lower
+   row that ranked below four better matches is not the answer to your task
+   just because policy would permit it.
+5. So Claude asks you one question — naming the package, its publisher and its
+   install count — and installs only on an explicit yes, with the command that
+   line printed. Had the top-ranked hit been one the policy trusts, step 4
+   would have installed it outright and printed `Installed now:` instead, and
+   Claude would have gone straight on to the task.
+
+A local index hit like this is one fast subprocess call; installing a skill —
+or, on an index miss, the one live registry search, capped at 4 seconds — is
+what actually takes time.
 
 As of this writing, the registry's much bigger, better-known
-`anthropics/skills@xlsx` (161,878 installs) never gets picked here: the local
-index marks that specific package `dirty` (next section), and `dirty` is
+`anthropics/skills@xlsx` (161,878 installs) never appears here at all: the
+local index marks that specific package `dirty` (next section), and `dirty` is
 denied before the allowlist is even consulted, however a query ranks it. This
-walkthrough is a live snapshot, not a promise — which package wins depends on
-the registry on the day you read it.
+walkthrough is a live snapshot, not a promise — which packages rank, and
+whether the top one is trusted, depends on the registry on the day you read
+it.
 
 ## Why it's safe to let an agent install things
 
@@ -97,7 +116,7 @@ The decision table, in order, first match wins:
 | scan verdict is `dirty` | **deny** |
 | no real install count yet (`estimated`) | ask |
 | scan carries an advisory | ask |
-| publisher in `allowlist` (`anthropics`, `vercel-labs` by default) | auto-install |
+| publisher in `allowlist` (`anthropics`, `vercel-labs` by default) **and** scan clean | auto-install |
 | ≥ 5000 installs **and** scan clean | auto-install |
 | anything else | ask the user first |
 
@@ -148,8 +167,9 @@ What backs it up:
   and no second bill, ever.
 - **It fails safe.** `find` always exits cleanly, even mid-failure: on an
   internal error, a registry outage, or a timeout, it prints one line and
-  changes nothing. Installs get 20s; on timeout the candidate is downgraded to
-  a question rather than left half-installed. The one network fallback (index
+  changes nothing. Installs get 120s — the same budget on the unattended path
+  as on the manual one; on timeout the candidate is downgraded to a question
+  rather than left half-installed. The one network fallback (index
   miss → live registry search) is capped at 4s, and a registry that never
   answers prints a distinct `Registry did not answer` line rather than being
   reported as "no skill exists."
@@ -277,24 +297,30 @@ What has metaskill installed so far:
 
 ```
 $ metaskill list
-SKILL  PACKAGE                 VERSION  MATCHED                          INSTALLED   STATUS
-xlsx   anthropics/skills@xlsx  v1.2.3   spreadsheet formulas automation  2026-09-02  ok
+SKILL  PACKAGE                                 VERSION  MATCHED  INSTALLED   STATUS
+xlsx   anthropics/claude-agent-sdk-demos@xlsx  v1.2.3   -        2026-09-02  ok
 ```
 
+MATCHED is the query phrase that found it. It reads `-` here because this one
+came from an approved `install ... --force` — the yes at the end of the
+walkthrough above — and a package you named by hand has no matching phrase to
+record. A skill `find` installed on its own carries the phrase that found it.
+
 Why, and what it decided along the way — `route` logs every prompt silently,
-`find` logs every lookup (this is a separate, illustrative run — not a
-continuation of the walkthrough above):
+`find` logs every lookup:
 
 ```
 $ metaskill log -n 3
-2026-09-02T13:23:07.585Z domains=[] 0ms
-2026-09-02T13:23:07.640Z domains=[find:spreadsheet formulas automation] installed=[anthropics/skills@xlsx] 26ms
-2026-09-02T13:23:07.668Z domains=[find:scraping] 2ms
+2026-09-02T14:07:56.499Z domains=[] 0ms
+2026-09-02T14:07:56.765Z domains=[find:xlsx export formulas] 238ms
+2026-09-02T14:07:57.141Z domains=[find:scraping] 228ms
 ```
 
 The first line is a plain prompt (`route` — nothing installed, nothing to
-show). The second is a `find` that matched locally and auto-installed. The
-third is a `find` that didn't install anything; the log records that a lookup
+show). The second is the walkthrough's lookup: it matched locally, and printed
+the five candidates without installing any of them. The third is a `find` that
+found nothing to install either. An `installed=[...]` field appears on the
+rows where a lookup did install something. The log records that a lookup
 happened, not why — `find`'s own printed line (and the question it asks you,
 if any) carries that detail in the moment. `metaskill log --stats` rolls the
 whole log up into one number: what share of prompts were actually followed by
@@ -326,8 +352,9 @@ parked for the next session).
   `anthropics/skills@xlsx` (a real `os.environ` read in its script), so if you
   already have it installed, updates will be refused until the registry scans
   it clean again.
-- **Install keeps timing out.** Raise `METASKILL_INSTALL_TIMEOUT_MS`, or
-  finish manually: `metaskill install <pkg> --force`.
+- **Install keeps timing out.** Installs get 120 seconds, automatic and
+  manual alike. If one still runs out, finish it by hand:
+  `metaskill install <pkg> --force`.
 
 ## Development
 

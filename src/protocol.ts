@@ -34,9 +34,11 @@ import { metaskillCmd } from "./paths.js";
 //     eleven lines under that sentence. The enumeration must never terminate
 //     in a condition the model can answer "no" to.
 //   - It does NOT warn against `npx skills add`. That duplicates SKILL.md
-//     Rule 2, is enforced in code (a deny cannot be bypassed by any flag), and
-//     spends scarce lines naming a bypass to a reader who was not looking for
-//     one.
+//     Rule 2 and spends scarce lines naming a bypass to a reader who was not
+//     looking for one. Note what is and is not enforced: metaskill's OWN
+//     install path cannot be talked past (a `deny` there survives every flag),
+//     but nothing stops a model running the skills CLI directly — there is no
+//     PreToolUse hook, so the ban on doing so is instruction, not enforcement.
 //   - `Registry did not answer` is listed separately from `No skills found`.
 //     A live lookup that timed out is not evidence that no skill exists, and a
 //     model given one label for both facts will report a coverage gap it never

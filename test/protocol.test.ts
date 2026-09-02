@@ -5,6 +5,7 @@ import { cliEntryPath } from "../src/paths.js";
 import { protocolText } from "../src/protocol.js";
 
 const FIND_SRC = fs.readFileSync(path.resolve(__dirname, "..", "src", "commands", "find.ts"), "utf8");
+const SKILL_MD = fs.readFileSync(path.resolve(__dirname, "..", "skills", "metaskill", "SKILL.md"), "utf8");
 
 // The protocol is hard-wrapped, so a phrase assertion has to survive a line
 // break falling in the middle of it. Only the line-shape test reads the
@@ -134,5 +135,56 @@ describe("protocolText", () => {
       .replace(process.execPath, "n".repeat(100))
       .replace(cliEntryPath(), "c".repeat(120));
     expect(injected.length).toBeLessThan(1600);
+  });
+});
+
+// SKILL.md is the longer reference for the same rules the protocol block
+// carries, and it drifted: it had neither the `Registry did not answer`
+// branch nor any statement that `find` installs unattended, so a model
+// reading the skill instead of the block got a strictly weaker contract than
+// the one the code implements. Cross-checked against find.ts the same way the
+// protocol is.
+describe("skills/metaskill/SKILL.md", () => {
+  const flatMd = SKILL_MD.replace(/\s+/g, " ");
+
+  it("quotes only labels that find.ts actually prints", () => {
+    for (const label of [
+      "Installed now:",
+      "Already present:",
+      "Top matches for",
+      "live search found",
+      "Refused by policy",
+      "Registry did not answer",
+      "No skills found",
+      // find composes this one: `Install ${timedOut ? "timed out" : "failed"}`.
+      "timed out",
+    ]) {
+      expect(SKILL_MD, `SKILL.md names "${label}"`).toContain(label);
+      expect(FIND_SRC, `find.ts prints "${label}"`).toContain(label);
+    }
+  });
+
+  it("covers every branch the protocol block covers", () => {
+    // Anything the block tells the model to act on, the reference must too —
+    // otherwise the two disagree about what the tool can print.
+    for (const label of ["Installed now:", "Already present:", "Top matches", "live search found",
+                         "Registry did not answer", "No skills found"]) {
+      expect(protocolText(), `protocol names "${label}"`).toContain(label);
+      expect(SKILL_MD, `SKILL.md names "${label}"`).toContain(label);
+    }
+  });
+
+  it("says that find installs unattended, not that it merely looks things up", () => {
+    // Default policy auto-installs an allowlisted publisher with a clean scan,
+    // or 5000+ installs with a clean scan, with nobody asked. A model that
+    // read only the "ask the user first" rule has no basis to warn them.
+    expect(flatMd).toMatch(/not only a lookup/i);
+    expect(flatMd).toMatch(/installs that skill for you/i);
+    expect(flatMd).toMatch(/unattended|unasked/i);
+    expect(flatMd).toMatch(/tell the user what it installed/i);
+  });
+
+  it("tells the model that a timed-out lookup is not a coverage gap", () => {
+    expect(flatMd).toMatch(/Registry did not answer.{0,160}not evidence/i);
   });
 });
