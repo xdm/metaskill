@@ -2,9 +2,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
-import { findByPkg, loadIndex, search, snapshotPath, tokenize } from "../src/index/read.js";
-import type { IndexFile } from "../src/index/types.js";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { MIN_RELEVANCE, findByPkg, loadIndex, search, tokenize } from "../src/index/read.js";
+import { INDEX_SCHEMA_VERSION, type IndexFile } from "../src/index/types.js";
 
 const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures/index-sample.json");
 const index = JSON.parse(fs.readFileSync(FIXTURE, "utf8")) as IndexFile;
@@ -70,31 +70,74 @@ describe("search", () => {
   });
 });
 
-describe("loadIndex: METASKILL_INDEX test isolation", () => {
-  it("a missing METASKILL_INDEX path returns null even when a real snapshot exists at packageRoot()", () => {
-    const snap = snapshotPath();
-    const hadSnapshot = fs.existsSync(snap);
-    const original = hadSnapshot ? fs.readFileSync(snap, "utf8") : null;
-    fs.writeFileSync(snap, JSON.stringify(index)); // a real, valid snapshot — proves it is never even opened
+describe("search: the relevance floor", () => {
+  // Corpus-independence is the whole reason `relevance` exists: BM25's raw
+  // score grows with log(N), so a floor set against the 4,831-skill snapshot
+  // would silence every hit in a 2-record test index and let junk through
+  // against the 43,714-skill index `sync` downloads.
+  const tiny: IndexFile = {
+    schemaVersion: 1, builtAt: "2026-09-02T00:00:00.000Z", skillCount: 1, repoCount: 1,
+    skills: [{ name: "gizmo", source: "o/r", pkg: "o/r@gizmo", description: "Gizmo automation toolkit.",
+               installs: 10, installsPrior: null, estimated: false, atRepoRoot: false,
+               scan: "clean", scanFindings: [], scanAdvisories: [] }],
+  };
 
-    const savedIndex = process.env.METASKILL_INDEX;
-    const savedHome = process.env.METASKILL_HOME;
-    process.env.METASKILL_INDEX = path.join(
-      fs.mkdtempSync(path.join(os.tmpdir(), "metaskill-noindex-")),
-      "does-not-exist.json",
-    );
-    delete process.env.METASKILL_HOME; // rule out a stray ~/.metaskill/index.json too
+  it("scores a full match above the floor in a 1-record index and in the 350-record fixture", () => {
+    expect(search(tiny, "gizmo automation", 1)[0]!.relevance).toBeGreaterThanOrEqual(MIN_RELEVANCE);
+    expect(search(index, "prisma postgres", 1)[0]!.relevance).toBeGreaterThanOrEqual(MIN_RELEVANCE);
+  });
 
-    try {
-      expect(loadIndex()).toBeNull();
-    } finally {
-      if (original !== null) fs.writeFileSync(snap, original);
-      else fs.rmSync(snap, { force: true });
-      if (savedIndex === undefined) delete process.env.METASKILL_INDEX;
-      else process.env.METASKILL_INDEX = savedIndex;
-      if (savedHome === undefined) delete process.env.METASKILL_HOME;
-      else process.env.METASKILL_HOME = savedHome;
-    }
+  it("keeps a partial match below the floor even when it is the best row available", () => {
+    // No document in the fixture covers both terms of "database migration",
+    // so its top hit (prisma-database-setup, which is about setup) sits at
+    // ~0.52. find prints `No skills found` rather than offering the nearest
+    // thing it could rank — the behaviour that stops "say hello" installing
+    // whatever happens to mention "hello".
+    expect(search(index, "database migration", 1)[0]!.relevance).toBeLessThan(MIN_RELEVANCE);
+  });
+
+  it("puts a hit that matched one term of a multi-term query below the floor", () => {
+    // "gizmo" matches, "kubernetes" cannot — half a query is not a match.
+    const h = search(tiny, "gizmo kubernetes elasticsearch", 1)[0]!;
+    expect(h.relevance).toBeLessThan(MIN_RELEVANCE);
+  });
+
+  it("orders by relevance exactly as it orders by score", () => {
+    // relevance divides every score for a query by the same constant, so the
+    // top hit by score is always the top hit by relevance. find.ts checks
+    // only hits[0].
+    const hits = search(index, "react component testing", 5);
+    const byRel = [...hits].sort((a, b) => b.relevance - a.relevance);
+    expect(byRel.map((h) => h.record.pkg)).toEqual(hits.map((h) => h.record.pkg));
+  });
+});
+
+describe("loadIndex: schemaVersion", () => {
+  let dir: string;
+  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), "ms-schema-")); });
+  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  function write(name: string, body: unknown): string {
+    const f = path.join(dir, name);
+    fs.writeFileSync(f, JSON.stringify(body));
+    return f;
+  }
+
+  it("reads an index at the current schema version", () => {
+    const f = write("ok.json", { ...index, schemaVersion: INDEX_SCHEMA_VERSION });
+    expect(loadIndex(f)?.skills.length).toBe(index.skills.length);
+  });
+
+  it("rejects a future schema version rather than guessing at its fields", () => {
+    // Every field the runtime reads off a record — scan, installs, estimated —
+    // decides whether something installs unattended. A builder that repurposes
+    // one must not be interpreted by a build that predates the change.
+    expect(loadIndex(write("future.json", { ...index, schemaVersion: INDEX_SCHEMA_VERSION + 1 }))).toBeNull();
+  });
+
+  it("rejects an index with no schemaVersion at all", () => {
+    const { schemaVersion, ...rest } = index;
+    expect(loadIndex(write("none.json", rest))).toBeNull();
   });
 });
 

@@ -38,10 +38,39 @@ describe("refreshIndex", () => {
     expect(fs.readdirSync(dir).filter((f) => f.includes(".tmp"))).toEqual([]);
   });
 
+  it("rejects a future schemaVersion and keeps the index this build can read", async () => {
+    // A newer builder may repurpose a field the running code decides policy
+    // on. Replacing a good local index with one this build misreads is worse
+    // than staying a day stale.
+    fs.writeFileSync(path.join(dir, "index.json"), '{"kept":true}');
+    const future = JSON.stringify({ ...JSON.parse(body), schemaVersion: 999 });
+    const r = await refreshIndex({ dir, fetchImpl: (async () => new Response(future, { status: 200 })) as any });
+    expect(r.updated).toBe(false);
+    expect(r.reason).toBe("not a valid index");
+    expect(fs.readFileSync(path.join(dir, "index.json"), "utf8")).toBe('{"kept":true}');
+  });
+
   it("never throws when fetch itself rejects", async () => {
     const r = await refreshIndex({ dir, fetchImpl: (async () => { throw new Error("offline"); }) as any });
     expect(r.updated).toBe(false);
     expect(r.reason).toBeTruthy();
+  });
+
+  // `=0` and `=false` are how a person turns a switch OFF. Under bare
+  // truthiness both turned the skip ON, so a user who thought they were
+  // re-enabling refreshes silently never got one again.
+  it("does not treat METASKILL_SKIP_INDEX_REFRESH=0 (or =false) as a request to skip", async () => {
+    const prev = process.env.METASKILL_SKIP_INDEX_REFRESH;
+    try {
+      for (const off of ["0", "false", "  "]) {
+        process.env.METASKILL_SKIP_INDEX_REFRESH = off;
+        const r = await refreshIndex({ dir, fetchImpl: (async () => new Response(body, { status: 200 })) as any });
+        expect(r.updated, off).toBe(true);
+      }
+    } finally {
+      if (prev === undefined) delete process.env.METASKILL_SKIP_INDEX_REFRESH;
+      else process.env.METASKILL_SKIP_INDEX_REFRESH = prev;
+    }
   });
 
   // The test harness (test/integration.test.ts's runCli) sets this on every

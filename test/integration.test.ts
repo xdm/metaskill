@@ -17,11 +17,11 @@ interface RunResult {
 
 function runCli(
   args: string[],
-  opts: { home: string; cwd?: string; input?: string; env?: Record<string, string> },
+  opts: { home: string; cwd?: string; input?: string; env?: Record<string, string>; cli?: string },
 ): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     const t0 = performance.now();
-    const child = spawn(process.execPath, [CLI, ...args], {
+    const child = spawn(process.execPath, [opts.cli ?? CLI, ...args], {
       cwd: opts.cwd ?? opts.home,
       env: {
         PATH: process.env.PATH ?? "",
@@ -59,6 +59,35 @@ function runCli(
 
 function freshHome(tag: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), `metaskill-int-${tag}-`));
+}
+
+// A complete, relocatable copy of the package: dist/cli.js under a temp root,
+// so packageRoot() — and with it snapshotPath() — resolves inside the
+// sandbox. It is the only way to exercise the packaged-snapshot fallback
+// without writing to the checkout's own index-snapshot.json, which an earlier
+// test did (clobbering a real artifact mid-run and restoring it in a
+// `finally`). Returns the path of the CLI to spawn.
+function tempPackage(tag: string, snapshot?: unknown): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), `metaskill-pkg-${tag}-`));
+  fs.mkdirSync(path.join(root, "dist"), { recursive: true });
+  fs.copyFileSync(CLI, path.join(root, "dist", "cli.js"));
+  if (snapshot !== undefined) {
+    fs.writeFileSync(path.join(root, "index-snapshot.json"), JSON.stringify(snapshot));
+  }
+  return path.join(root, "dist", "cli.js");
+}
+
+// One index record, with the fields find/policy actually read.
+function rec(over: Record<string, unknown>): Record<string, unknown> {
+  return {
+    name: "skill", source: "o/r", pkg: "o/r@skill", description: "A skill.",
+    installs: 10, installsPrior: null, estimated: false, atRepoRoot: false,
+    scan: "clean", scanFindings: [], scanAdvisories: [], ...over,
+  };
+}
+
+function indexFile(skills: unknown[], schemaVersion = 1): unknown {
+  return { schemaVersion, builtAt: new Date().toISOString(), skillCount: skills.length, repoCount: 1, skills };
 }
 
 function stubCalls(home: string): string[][] {
@@ -375,6 +404,267 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     expect(r3.stdout).toContain("anthropics/skills@sprocketamatic");
     expect(r3.stdout).not.toContain("sprocketamatic-ghost");
     expect(readLockFile(home)["anthropics/skills@sprocketamatic"]).toBeTruthy();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+});
+
+describe("find: only the top-ranked hit installs, and only above the relevance floor", () => {
+  // Before this, `find` took the first row whose DECISION was `auto`,
+  // wherever it ranked, and acted on any BM25 hit at all. Measured against
+  // the shipped snapshot: 29 of 30 junk phrases ("say hello", "weather in
+  // paris") auto-installed a third-party skill unattended, and on 25 real
+  // capability phrases 11 installed something that was not the top match.
+
+  it("a junk query whose best hit is weak installs nothing and does not even search live", async () => {
+    const home = freshHome("find-floor");
+    const idx = writeIndex(home, [
+      // Allowlisted + clean, so policy would say `auto` the moment anything
+      // reached it. Only "hello" of the query is in this description, so the
+      // hit is a fragment of a match, not a match.
+      rec({ name: "cardputer-buddy", source: "anthropics/plugins", pkg: "anthropics/plugins@cardputer-buddy",
+            description: "Say hello to your handheld device companion.", installs: 900 }),
+      rec({ name: "widget-press", source: "acme/tools", pkg: "acme/tools@widget-press",
+            description: "Press widgets into shape.", installs: 20 }),
+    ]);
+    const r = await runCli(["find", "say hello zorbulon", "--index", idx], { home });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('No skills found for "say hello zorbulon"');
+    expect(r.stdout).not.toContain("Installed now:");
+    expect(r.stdout).not.toContain("Top matches");
+    // A weak local hit is not a reason to go to the network either: the live
+    // fallback exists for a query the index has never heard of.
+    expect(stubCalls(home)).toEqual([]);
+    expect(readLockFile(home)).toEqual({});
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("a second-ranked auto row never installs when the top-ranked row is ask", async () => {
+    const home = freshHome("find-rank");
+    const idx = writeIndex(home, [
+      // Ranks first (it repeats both query terms), but 42 installs from an
+      // unknown publisher -> ask.
+      rec({ name: "zorptastic-pro", source: "someorg/repo", pkg: "someorg/repo@zorptastic-pro",
+            description: "Zorptastic widget tooling: zorptastic widget pipelines, zorptastic widget builds.",
+            installs: 42 }),
+      // Ranks second, and is exactly the row the old code installed.
+      rec({ name: "zorptastic", source: "anthropics/skills", pkg: "anthropics/skills@zorptastic",
+            description: "Zorptastic widget helper for teams of every size and shape.", installs: 999999 }),
+    ]);
+    const r = await runCli(["find", "zorptastic widget", "--index", idx], { home });
+    expect(r.code).toBe(0);
+    expect(r.stdout).not.toContain("Installed now:");
+    expect(r.stdout).toContain('Top matches for "zorptastic widget"');
+    // Both rows are still offered — the model asks the user, which is the
+    // deliberate step the spec calls for (§4.4).
+    expect(r.stdout).toContain("someorg/repo@zorptastic-pro");
+    expect(r.stdout).toContain("anthropics/skills@zorptastic");
+    expect(stubCalls(home).filter((c) => c[0] === "add")).toEqual([]);
+    expect(readLockFile(home)).toEqual({});
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("the top-ranked row still installs when it is the one policy trusts", async () => {
+    const home = freshHome("find-rank-ok");
+    const idx = writeIndex(home, [
+      rec({ name: "zorptastic", source: "anthropics/skills", pkg: "anthropics/skills@zorptastic",
+            description: "Zorptastic widget helper: zorptastic widget pipelines and zorptastic widget builds.",
+            installs: 999999 }),
+      rec({ name: "zorptastic-lite", source: "someorg/repo", pkg: "someorg/repo@zorptastic-lite",
+            description: "A lighter zorptastic widget helper.", installs: 42 }),
+    ]);
+    const r = await runCli(["find", "zorptastic widget", "--index", idx], { home });
+    expect(r.stdout).toContain("Installed now: anthropics/skills@zorptastic");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("gives the unattended install the same 120s the manual path gets, not the 20s default", async () => {
+    // Measured at 20.17s ending in a timeout on exactly this path — the one
+    // nobody is watching. installSkill's own default (or the env override
+    // standing in for it here) must not be what governs it: with the caller
+    // passing 120s, a deliberately tiny METASKILL_INSTALL_TIMEOUT_MS cannot
+    // reach the call, and an install that takes longer than it still lands.
+    const home = freshHome("find-timeout");
+    const idx = writeIndex(home, [
+      rec({ name: "slowpoke", source: "anthropics/skills", pkg: "anthropics/skills@slowpoke",
+            description: "Slowpoke automation toolkit for slowpoke automation workflows.", installs: 999999 }),
+    ]);
+    const r = await runCli(["find", "slowpoke automation", "--index", idx], {
+      home,
+      env: { METASKILL_INSTALL_TIMEOUT_MS: "1", STUB_ADD_SLEEP_MS: "250" },
+    });
+    expect(r.stdout).toContain("Installed now: anthropics/skills@slowpoke");
+    expect(r.stdout).not.toContain("timed out");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("never lists a denied package under the ask header or beside an install command", async () => {
+    // `deny` rows printed under "ask the user ONE question before installing
+    // any", above a line reading `install <pkg> --force`, invite the model to
+    // go get approval for something no flag can install.
+    const home = freshHome("find-deny");
+    const idx = writeIndex(home, [
+      rec({ name: "flumbex", source: "anthropics/skills", pkg: "anthropics/skills@flumbex",
+            description: "Flumbex widget processor for flumbex widget pipelines.", installs: 999999,
+            scan: "dirty", scanFindings: ["os.environ in script.py"] }),
+      rec({ name: "flumbex-lite", source: "someorg/repo", pkg: "someorg/repo@flumbex-lite",
+            description: "Lightweight flumbex widget helper.", installs: 42 }),
+    ]);
+    const r = await runCli(["find", "flumbex widget", "--index", idx], { home });
+    expect(r.code).toBe(0);
+    const askHeader = r.stdout.indexOf("ask the user ONE question");
+    const forceLine = r.stdout.indexOf("install <pkg> --force");
+    const denied = r.stdout.indexOf("anthropics/skills@flumbex ");
+    expect(askHeader).toBeGreaterThanOrEqual(0);
+    expect(denied).toBeGreaterThan(forceLine); // below the ask block, never inside it
+    expect(r.stdout).toContain("Refused by policy");
+    expect(r.stdout).toContain("someorg/repo@flumbex-lite");
+    expect(stubCalls(home).filter((c) => c[0] === "add")).toEqual([]);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("prints the documented No-skills-found line when every match is denied", async () => {
+    const home = freshHome("find-alldeny");
+    const idx = writeIndex(home, [
+      rec({ name: "flumbex", source: "anthropics/skills", pkg: "anthropics/skills@flumbex",
+            description: "Flumbex widget processor for flumbex widget pipelines.", installs: 999999,
+            scan: "dirty", scanFindings: ["os.environ in script.py"] }),
+    ]);
+    const r = await runCli(["find", "flumbex widget", "--index", idx], { home });
+    expect(r.stdout).toContain('No skills found for "flumbex widget"');
+    expect(r.stdout).not.toContain("ask the user ONE question");
+    expect(r.stdout).not.toContain("install <pkg> --force");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+});
+
+describe("find: reinstall protection matches a name, never a word inside one", () => {
+  function installSkillOnDisk(home: string, name: string): void {
+    const dir = path.join(home, ".claude", "skills", name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: d\n---\n\n# ${name}\n`);
+  }
+
+  it("does not answer an unrelated query with an installed skill that shares a word", async () => {
+    // With only `codebase-memory` installed, both `find "code review"` and
+    // `find "memory profiling"` answered "Already present: codebase-memory",
+    // suppressed the index lookup entirely, and sent the model off to read an
+    // unrelated SKILL.md. The rate grew with every skill installed.
+    const home = freshHome("find-present-fp");
+    installSkillOnDisk(home, "codebase-memory");
+    const idx = writeIndex(home, [
+      rec({ name: "reviewer", source: "someorg/repo", pkg: "someorg/repo@reviewer",
+            description: "Code review assistant: code review checklists and code review reports.",
+            installs: 42 }),
+    ]);
+    const r = await runCli(["find", "code review", "--index", idx], { home });
+    expect(r.stdout).not.toContain("Already present");
+    expect(r.stdout).toContain("someorg/repo@reviewer"); // it reached the index
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("still short-circuits when the query IS the skill's name", async () => {
+    const home = freshHome("find-present-name");
+    installSkillOnDisk(home, "codebase-memory");
+    const idx = writeIndex(home, [rec({})]);
+    const r = await runCli(["find", "codebase memory", "--index", idx], { home });
+    expect(r.stdout).toContain("Already present: codebase-memory");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("short-circuits a repeat of the exact phrase that installed a skill, via the lock", async () => {
+    const home = freshHome("find-present-lock");
+    const idx = writeIndex(home, [
+      rec({ name: "sheetwrangler", source: "anthropics/skills", pkg: "anthropics/skills@sheetwrangler",
+            description: "Excel spreadsheets toolkit: excel spreadsheets formulas and excel spreadsheets charts.",
+            installs: 999999 }),
+    ]);
+    const first = await runCli(["find", "excel spreadsheets", "--index", idx], { home });
+    expect(first.stdout).toContain("Installed now: anthropics/skills@sheetwrangler");
+    expect(readLockFile(home)["anthropics/skills@sheetwrangler"]).toMatchObject({ domain: "excel spreadsheets" });
+
+    // The skill is named nothing like the query, so only the lock can answer
+    // this — and it must, rather than installing the same package twice.
+    const again = await runCli(["find", "excel spreadsheets", "--index", idx], { home });
+    expect(again.stdout).toContain("Already present: sheetwrangler");
+    expect(stubCalls(home).filter((c) => c[0] === "add")).toHaveLength(1);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+});
+
+describe("the packaged snapshot is the offline floor", () => {
+  // Deleting `?? readOne(snapshotPath())` from loadIndex left the whole suite
+  // green: nothing exercised the fallback, because snapshotPath() resolves
+  // under the running package's own root. These run a copy of the CLI from a
+  // temp package root instead, so the fallback is reachable without touching
+  // the checkout's own index-snapshot.json.
+
+  it("answers a lookup from the packaged snapshot with no index.json anywhere", async () => {
+    const home = freshHome("snap-fallback");
+    const cli = tempPackage(
+      "fallback",
+      indexFile([
+        rec({ name: "snapshotonly", source: "someorg/repo", pkg: "someorg/repo@snapshotonly",
+              description: "Snapshotonly widget tool for snapshotonly widget pipelines.", installs: 42 }),
+      ]),
+    );
+    const r = await runCli(["find", "snapshotonly widget"], {
+      home,
+      cli,
+      // No --index, no METASKILL_INDEX override, and ~/.metaskill is empty:
+      // the packaged snapshot is the only index that exists.
+      env: { METASKILL_INDEX: "" },
+    });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain("someorg/repo@snapshotonly");
+    expect(fs.existsSync(path.join(home, ".metaskill", "index.json"))).toBe(false);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("prefers ~/.metaskill/index.json over the snapshot once sync has landed one", async () => {
+    const home = freshHome("snap-order");
+    const cli = tempPackage(
+      "order",
+      indexFile([
+        rec({ name: "stale", source: "someorg/repo", pkg: "someorg/repo@stale",
+              description: "Snapshotonly widget tool for snapshotonly widget pipelines.", installs: 42 }),
+      ]),
+    );
+    fs.mkdirSync(path.join(home, ".metaskill"), { recursive: true });
+    fs.writeFileSync(
+      path.join(home, ".metaskill", "index.json"),
+      JSON.stringify(
+        indexFile([
+          rec({ name: "fresh", source: "someorg/repo", pkg: "someorg/repo@fresh",
+                description: "Snapshotonly widget tool for snapshotonly widget pipelines.", installs: 42 }),
+        ]),
+      ),
+    );
+    const r = await runCli(["find", "snapshotonly widget"], { home, cli, env: { METASKILL_INDEX: "" } });
+    expect(r.stdout).toContain("someorg/repo@fresh");
+    expect(r.stdout).not.toContain("someorg/repo@stale");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("a missing METASKILL_INDEX path returns null even with a real snapshot at the package root", async () => {
+    // The override is the ONLY file consulted when it is set — otherwise a
+    // spawned CLI in a sandboxed HOME silently reads whatever snapshot sits
+    // in the package root, and every test that seeds no index gets a
+    // developer's real one.
+    const home = freshHome("snap-override");
+    const cli = tempPackage(
+      "override",
+      indexFile([
+        rec({ name: "snapshotonly", source: "someorg/repo", pkg: "someorg/repo@snapshotonly",
+              description: "Snapshotonly widget tool for snapshotonly widget pipelines.", installs: 42 }),
+      ]),
+    );
+    const r = await runCli(["find", "snapshotonly widget"], {
+      home,
+      cli,
+      env: { METASKILL_INDEX: path.join(home, "does-not-exist.json"), STUB_FIND_EMPTY: "1" },
+    });
+    expect(r.stdout).not.toContain("someorg/repo@snapshotonly");
+    expect(r.stdout).toContain("No skills found");
     fs.rmSync(home, { recursive: true, force: true });
   });
 });
@@ -759,7 +1049,11 @@ describe("packaged assets", () => {
     // everything the plugin needs must ship in the npm tarball — dist/cli.js
     // specifically, not the whole dist/ directory: the CI-only index builder
     // is unreachable via "bin" and has no reason to ride along with it.
-    for (const entry of ["dist/cli.js", "skills", "commands", "hooks", "templates", ".claude-plugin"]) {
+    // index-snapshot.json is the offline floor: dropped from `files`, a fresh
+    // install has no index at all until `sync` has run and downloaded one.
+    for (const entry of [
+      "dist/cli.js", "index-snapshot.json", "skills", "commands", "hooks", "templates", ".claude-plugin",
+    ]) {
       expect(pkg.files, entry).toContain(entry);
     }
   });

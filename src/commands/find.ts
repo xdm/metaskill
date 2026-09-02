@@ -1,13 +1,14 @@
-import { loadIndex, search } from "../index/read.js";
+import { MIN_RELEVANCE, loadIndex, scanResultFromIndex, search } from "../index/read.js";
 import { metaskillCmd } from "../paths.js";
 import type { IndexRecord } from "../index/types.js";
 import { discoverByQuery, publisherOf } from "../discover.js";
 import { installSkill } from "../install.js";
 import { listInstalledSkills } from "../inventory.js";
+import { readLock } from "../lock.js";
 import { findPlugins, formatPluginLine } from "../plugins.js";
 import { decide, loadPolicy } from "../policy.js";
 import { appendLog, hashPrompt } from "../log.js";
-import type { Candidate, ScanResult } from "../types.js";
+import type { Candidate, InstalledSkill } from "../types.js";
 
 export function recordToCandidate(r: IndexRecord): Candidate {
   return {
@@ -20,19 +21,33 @@ export function recordToCandidate(r: IndexRecord): Candidate {
   };
 }
 
-// The index already carries a scan verdict per skill, so the runtime never
-// downloads a tarball on this path (spec §7 Defect 2).
-// loadIndex/readOne only validates that `skills` is an array, never the shape
-// of each record, so a hand-edited or corrupted index.json can omit these
-// arrays entirely (or carry an explicit `null`) — default them, or a dirty
-// scan (policy.ts's `scan.findings.slice`) or an advisory check
-// (`scan.advisories.length`) throws before find ever gets to print anything.
-function scanFromIndex(r: IndexRecord): ScanResult {
-  return {
-    status: r.scan === "unknown" ? "unavailable" : r.scan,
-    findings: r.scanFindings ?? [],
-    advisories: r.scanAdvisories ?? [],
-  };
+// Reinstall protection, deliberately narrow. It used to ask whether ANY word
+// of the query (>=3 chars) appeared anywhere inside an installed skill's
+// name, which with only `codebase-memory` installed answered both `find "code
+// review"` and `find "memory profiling"` with "Already present:
+// codebase-memory" — suppressing the index lookup and handing the model an
+// unrelated SKILL.md to follow. The false-positive rate grows with every
+// skill installed, so the test is now equality, not containment:
+//
+//   (i)  an installed skill whose name IS the query (spaces -> hyphens), or
+//   (ii) the lock recording this exact phrase as the phrase that installed it
+//        (LockEntry.domain, which findCommand writes on every auto-install).
+//
+// Anything else goes to the index. The cost of being wrong in this direction
+// is one extra local lookup; the cost in the other direction was the model
+// reading the wrong skill.
+function alreadyPresent(q: string, installed: InstalledSkill[]): InstalledSkill | undefined {
+  const hyphenated = q.replace(/ /g, "-");
+  const byName = installed.find((s) => s.name.toLowerCase() === hyphenated);
+  if (byName) return byName;
+  let lock;
+  try {
+    lock = readLock();
+  } catch {
+    return undefined; // a corrupt lock costs the shortcut, never the command
+  }
+  const matched = Object.values(lock).find((e) => e.domain === q);
+  return matched ? installed.find((s) => s.name === matched.skill) : undefined;
 }
 
 function line(r: IndexRecord, decision: string, reason: string): string {
@@ -76,11 +91,9 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
         ? `[metaskill] ${formatPluginLine(pluginHit)} — ask the user before installing it; on yes: /plugin install ${pluginHit.name}@${pluginHit.marketplace}\n`
         : "";
 
-    // Reinstall protection: an installed skill whose name matches the query
-    // answers it without touching the index or the network.
-    const installed = listInstalledSkills(process.cwd());
-    const words = q.split(" ").filter((w) => w.length >= 3);
-    const present = installed.find((s) => words.some((w) => s.name.toLowerCase().includes(w)));
+    // Reinstall protection: an installed skill the query names exactly answers
+    // it without touching the index or the network.
+    const present = alreadyPresent(q, listInstalledSkills(process.cwd()));
     if (present) {
       process.stdout.write(`[metaskill] Already present: ${present.name} — use ${present.dir}/SKILL.md\n${pluginLine}`);
       logFind([], [present.name]);
@@ -146,14 +159,33 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       return 0;
     }
 
+    // Relevance floor. BM25 ranks whatever it is given: before this, EVERY
+    // query got a top hit, so "say hello" auto-installed a third-party skill
+    // (29 of 30 measured junk phrases did). A top hit this weak is not a
+    // worse match, it is not a match — so it is not offered for confirmation
+    // either, and no live search is run on its behalf. See MIN_RELEVANCE.
+    if (hits[0]!.relevance < MIN_RELEVANCE) {
+      process.stdout.write(`[metaskill] No skills found for "${q}". Solve the task without one.\n${pluginLine}`);
+      logFind([], []);
+      return 0;
+    }
+
     const rows = hits.map((h) => {
-      const v = decide(recordToCandidate(h.record), scanFromIndex(h.record), policy);
+      const v = decide(recordToCandidate(h.record), scanResultFromIndex(h.record), policy);
       return { r: h.record, v };
     });
 
-    const auto = rows.find((x) => x.v.decision === "auto");
+    // ONLY the top-ranked hit may install unattended. Taking the first `auto`
+    // ROW instead meant a rank-5 hit installed itself whenever ranks 1-4 were
+    // `ask` — measured on 25 real capability phrases, 11 installed something
+    // that was not the top match. Lower-ranked rows still appear below, where
+    // a human decides.
+    const auto = rows[0]!.v.decision === "auto" ? rows[0]! : undefined;
     if (auto) {
-      const res = await installSkill(auto.r.pkg, q);
+      // The same 120s the manual `install` path uses. The 20s default was
+      // measured timing out at 20.17s on exactly this path — and this is the
+      // one nobody is watching.
+      const res = await installSkill(auto.r.pkg, q, { timeoutMs: 120_000 });
       if (res.ok) {
         process.stdout.write(
           `[metaskill] Installed now: ${auto.r.pkg}${res.version ? ` (v${res.version})` : ""}${res.skillMdPath ? ` -> ${res.skillMdPath}` : ""}\n` +
@@ -169,10 +201,32 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       return 0;
     }
 
+    // Denied rows never appear under the ask header. Listed there, above a
+    // line reading `install <pkg> --force`, they read as an invitation to go
+    // get approval for a package policy has already refused — and no flag
+    // installs them, so the only possible outcome was a wasted question and a
+    // failed command. They keep their own block, with no command under it.
+    const askable = rows.filter((x) => x.v.decision !== "deny");
+    const denied = rows.filter((x) => x.v.decision === "deny");
+    const deniedBlock = denied.length
+      ? `Refused by policy — no flag installs these, do not offer them:\n` +
+        denied.map((x) => line(x.r, x.v.decision, x.v.reason)).join("\n") +
+        "\n"
+      : "";
+    if (!askable.length) {
+      // Every match refused. `No skills found` is the branch the protocol and
+      // SKILL.md already tell the model how to act on (solve it yourself);
+      // inventing a label for this case would leave it improvising.
+      process.stdout.write(
+        `[metaskill] No skills found for "${q}". Solve the task without one.\n${deniedBlock}${pluginLine}`,
+      );
+      logFind([], []);
+      return 0;
+    }
     process.stdout.write(
       `[metaskill] Top matches for "${q}" — none auto-installable, ask the user ONE question before installing any:\n` +
-        rows.map((x) => line(x.r, x.v.decision, x.v.reason)).join("\n") +
-        `\nOn an explicit yes run: ${metaskillCmd()} install <pkg> --force\n${pluginLine}`,
+        askable.map((x) => line(x.r, x.v.decision, x.v.reason)).join("\n") +
+        `\nOn an explicit yes run: ${metaskillCmd()} install <pkg> --force\n${deniedBlock}${pluginLine}`,
     );
     logFind([], []);
     return 0;

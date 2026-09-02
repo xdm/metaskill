@@ -1,12 +1,48 @@
 import fs from "node:fs";
 import path from "node:path";
 import { metaskillHome, packageRoot } from "../paths.js";
-import type { IndexFile, IndexRecord } from "./types.js";
+import type { ScanResult } from "../types.js";
+import { INDEX_SCHEMA_VERSION, type IndexFile, type IndexRecord } from "./types.js";
 
 export interface Hit {
   record: IndexRecord;
   score: number;
+  // The BM25 score as a fraction of the best score this query could possibly
+  // reach (the sum of its terms' IDF). Raw BM25 is not comparable between
+  // queries or between corpora — it grows with query length and with log(N),
+  // so the same phrase scores ~0.4 against a 1-record index and ~10 against
+  // the 4,831-skill snapshot, and higher again against the 43,714-skill index
+  // `sync` downloads. This ratio is stable across all three, which is what
+  // lets MIN_RELEVANCE below be a fixed number rather than a function of
+  // whichever index the user happens to have. It is not bounded by 1: BM25's
+  // term-frequency factor saturates at K1+1, so a document that repeats every
+  // query term lands above it.
+  relevance: number;
 }
+
+// Relevance floor for acting on a hit. MEASURED against the shipped snapshot
+// (4,831 skills, built 2026-09-02) over 30 junk phrases a model might hand
+// `find` on a conversational turn ("say hello", "tell me a joke", "weather in
+// paris") and 25 real capability phrases ("database migration", "xlsx export
+// formulas", "playwright testing"):
+//
+//   junk:       min 0.347  p25 0.474  median 0.700  p75 0.822  max 1.298
+//   capability: min 0.850  p25 1.024  median 1.283  p75 1.494  max 1.815
+//
+// The two distributions OVERLAP between 0.850 and 1.298 — no floor separates
+// them cleanly, and any value high enough to reject every junk phrase (>1.30)
+// would silence 24 of the 25 capability phrases. 0.80 is the highest value
+// that still keeps all 25 capability phrases (the weakest, "postgres tuning",
+// sits at 0.850) while rejecting 24 of the 30 junk phrases outright. The six
+// junk phrases that survive it reach an ask-block, not an install: combined
+// with "only the top-ranked hit may auto-install" in find.ts, unattended junk
+// installs fall from 28/30 measured before this change to 4/30.
+//
+// Raw-score floors were measured too and are strictly worse: at the highest
+// raw floor that keeps all 25 capability phrases (score >= 9) 13 of the 30
+// junk phrases still auto-install, and the value would have to be re-derived
+// for every index size. Do not "simplify" this back to a raw score.
+export const MIN_RELEVANCE = 0.8;
 
 // Single characters carry no signal and blow up the term dictionary; version
 // fragments ("1", "2") would otherwise dominate rare-term scoring.
@@ -27,14 +63,43 @@ export function snapshotPath(): string {
   return path.join(packageRoot(), "index-snapshot.json");
 }
 
+// A file whose schemaVersion is not the one this build understands is not an
+// index as far as the runtime is concerned: a future builder may repurpose a
+// field this code reads (`scan`, `installs`, `estimated` all drive policy), so
+// guessing at it is how a stale binary auto-installs on a verdict it
+// misread. Rejecting it here also stops refreshIndex from replacing a good
+// local index with one it cannot interpret.
 function readOne(file: string): IndexFile | null {
   try {
     const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as IndexFile;
-    if (!Array.isArray(parsed.skills)) return null;
+    if (!isIndexFile(parsed)) return null;
     return parsed;
   } catch {
     return null;
   }
+}
+
+export function isIndexFile(parsed: unknown): parsed is IndexFile {
+  const f = parsed as IndexFile | null;
+  return !!f && Array.isArray(f.skills) && f.schemaVersion === INDEX_SCHEMA_VERSION;
+}
+
+// The index already carries a scan verdict per skill, so no runtime path has
+// to download a tarball to find out (spec 7 Defect 2). `unknown` in the index
+// means the scanner never got a verdict, which is `unavailable` to policy —
+// never "clean".
+//
+// loadIndex/readOne validates the file, never the shape of each record, so a
+// hand-edited or corrupted index.json can omit these arrays entirely (or
+// carry an explicit `null`) — default them, or a dirty scan
+// (policy.ts's `scan.findings.slice`) or an advisory check
+// (`scan.advisories.length`) throws before the caller prints anything.
+export function scanResultFromIndex(r: IndexRecord): ScanResult {
+  return {
+    status: r.scan === "unknown" ? "unavailable" : r.scan,
+    findings: r.scanFindings ?? [],
+    advisories: r.scanAdvisories ?? [],
+  };
 }
 
 // METASKILL_INDEX exists for test isolation: a sandboxed HOME can redirect
@@ -67,6 +132,13 @@ export function search(index: IndexFile, query: string, limit = 5): Hit[] {
   }
 
   const N = docs.length;
+  const idfOf = (t: string): number => {
+    const n = df.get(t) ?? 0;
+    return Math.log(1 + (N - n + 0.5) / (n + 0.5));
+  };
+  // The best score any document could reach for this query: every term
+  // matched, before the term-frequency factor. The denominator of `relevance`.
+  const maxScore = qTerms.reduce((a, t) => a + idfOf(t), 0);
   // Dedup by pkg, keeping the highest-scoring row: index.json can carry the
   // same package more than once (repeat scans, registry sweep overlap), and
   // a caller-facing top-N must not repeat a package to fill it.
@@ -89,13 +161,13 @@ export function search(index: IndexFile, query: string, limit = 5): Hit[] {
     for (const t of qTerms) {
       const f = tf.get(t);
       if (!f) continue;
-      const n = df.get(t) ?? 0;
-      const idf = Math.log(1 + (N - n + 0.5) / (n + 0.5));
-      score += idf * ((f * (K1 + 1)) / (f + K1 * (1 - B + (B * doc.length) / avgLen)));
+      score += idfOf(t) * ((f * (K1 + 1)) / (f + K1 * (1 - B + (B * doc.length) / avgLen)));
     }
     if (score <= 0) continue;
     const existing = bestByPkg.get(record.pkg);
-    if (!existing || score > existing.score) bestByPkg.set(record.pkg, { record, score });
+    if (!existing || score > existing.score) {
+      bestByPkg.set(record.pkg, { record, score, relevance: maxScore > 0 ? score / maxScore : 0 });
+    }
   }
 
   const hits = [...bestByPkg.values()];

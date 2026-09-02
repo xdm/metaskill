@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { metaskillHome } from "../paths.js";
-import type { IndexFile } from "./types.js";
+import { isIndexFile } from "./read.js";
 
 const ASSET = "https://github.com/xdm/metaskill/releases/download/index-latest/index.json";
 
@@ -23,7 +23,12 @@ export async function refreshIndex(
   // test harness sets this instead, so `npm test` never reaches the network.
   // Never set by a real user session; only the test harness's own spawned
   // env carries it.
-  if (process.env.METASKILL_SKIP_INDEX_REFRESH) {
+  // Set-and-non-empty, not bare truthiness: `METASKILL_SKIP_INDEX_REFRESH=0`
+  // and `=false` are how a user turns a switch OFF, and under truthiness both
+  // turned the skip ON — silently costing them every index refresh. Same
+  // idiom as METASKILL_SKILLS_CMD in paths.ts.
+  const skip = process.env.METASKILL_SKIP_INDEX_REFRESH;
+  if (skip && skip.trim().length > 0 && skip !== "0" && skip.toLowerCase() !== "false") {
     return { updated: false, reason: "skipped (METASKILL_SKIP_INDEX_REFRESH)" };
   }
   const dir = opts.dir ?? metaskillHome();
@@ -39,8 +44,12 @@ export async function refreshIndex(
     const res = await (opts.fetchImpl ?? fetch)(ASSET, { signal: ctrl.signal });
     if (!res.ok) return { updated: false, reason: `HTTP ${res.status}` };
     const text = await res.text();
-    const parsed = JSON.parse(text) as IndexFile;
-    if (!Array.isArray(parsed.skills) || !parsed.skills.length) {
+    const parsed: unknown = JSON.parse(text);
+    // isIndexFile also rejects a schemaVersion this build does not understand:
+    // a future index format must never overwrite the one the running code can
+    // still read correctly, because every field it gets wrong is a field
+    // policy decides on.
+    if (!isIndexFile(parsed) || !parsed.skills.length) {
       return { updated: false, reason: "not a valid index" };
     }
     fs.mkdirSync(dir, { recursive: true });
