@@ -17,11 +17,24 @@ export interface RefreshOpts {
 export async function refreshIndex(
   opts: RefreshOpts = {},
 ): Promise<{ updated: boolean; skillCount?: number; reason?: string }> {
+  // `sync` calls this with no injected fetch, and integration tests exercise
+  // `sync` by spawning the real built CLI as a subprocess — there's no
+  // in-process seam to hand it a stub fetchImpl across that boundary. The
+  // test harness sets this instead, so `npm test` never reaches the network.
+  // Never set by a real user session; only the test harness's own spawned
+  // env carries it.
+  if (process.env.METASKILL_SKIP_INDEX_REFRESH) {
+    return { updated: false, reason: "skipped (METASKILL_SKIP_INDEX_REFRESH)" };
+  }
   const dir = opts.dir ?? metaskillHome();
   const dest = path.join(dir, "index.json");
   const tmp = `${dest}.${process.pid}.tmp`;
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 20_000);
+  // The real asset is ~23.8MB (23,775,671 bytes measured). A 20s budget was
+  // measured aborting mid-download on a fast connection (three real runs:
+  // 11.98s, 19.91s, and one that exceeded 20s and got cut off) — do not
+  // "tidy" this back down without re-measuring against the current asset size.
+  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 45_000);
   try {
     const res = await (opts.fetchImpl ?? fetch)(ASSET, { signal: ctrl.signal });
     if (!res.ok) return { updated: false, reason: `HTTP ${res.status}` };

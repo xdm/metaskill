@@ -43,4 +43,25 @@ describe("refreshIndex", () => {
     expect(r.updated).toBe(false);
     expect(r.reason).toBeTruthy();
   });
+
+  // The test harness (test/integration.test.ts's runCli) sets this on every
+  // spawned CLI process so `npm test` never touches the network — see
+  // refresh.ts. Proven here at the unit level: fetchImpl throws if it is
+  // ever called, so a passing test means the network path was never reached.
+  it("skips the network entirely when METASKILL_SKIP_INDEX_REFRESH is set", async () => {
+    const prev = process.env.METASKILL_SKIP_INDEX_REFRESH;
+    process.env.METASKILL_SKIP_INDEX_REFRESH = "1";
+    try {
+      const fetchImpl = (async () => {
+        throw new Error("fetchImpl must not be called when the skip flag is set");
+      }) as any;
+      const r = await refreshIndex({ dir, fetchImpl });
+      expect(r.updated).toBe(false);
+      expect(r.reason).toContain("METASKILL_SKIP_INDEX_REFRESH");
+      expect(fs.existsSync(path.join(dir, "index.json"))).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.METASKILL_SKIP_INDEX_REFRESH;
+      else process.env.METASKILL_SKIP_INDEX_REFRESH = prev;
+    }
+  });
 });

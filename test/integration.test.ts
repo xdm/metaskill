@@ -29,6 +29,10 @@ function runCli(
         METASKILL_HOME: path.join(opts.home, ".metaskill"),
         METASKILL_SKILLS_CMD: `"${process.execPath}" "${STUB}"`,
         STUB_LOG: path.join(opts.home, "stub-calls.log"),
+        // Every CLI process this suite spawns must stay off the real
+        // network — `sync` would otherwise download the real ~23.8MB index
+        // release on every run. See refresh.ts.
+        METASKILL_SKIP_INDEX_REFRESH: "1",
         ...opts.env,
       },
     });
@@ -581,6 +585,15 @@ describe("sync end-to-end (spec 4.3)", () => {
     expect(out.hookSpecificOutput.hookEventName).toBe("SessionStart");
     expect(out.hookSpecificOutput.additionalContext).toContain("Updated skills: xlsx");
     expect(out.hookSpecificOutput.additionalContext).toContain("baz");
+
+    // METASKILL_SKIP_INDEX_REFRESH (set for every runCli process, see above)
+    // must have kept this run off the network: no "index refreshed" line,
+    // and no index.json ever landed in the sandboxed home. A real download
+    // succeeding here would write that file (see index-refresh.test.ts and
+    // task-5-report.md's real-download measurements) — its absence is
+    // direct, black-box proof that refreshIndex's skip path was taken.
+    expect(out.hookSpecificOutput.additionalContext).not.toContain("index refreshed");
+    expect(fs.existsSync(path.join(home, ".metaskill", "index.json"))).toBe(false);
 
     // stub was asked to update ONLY the allowlisted skill
     const updates = stubCalls(home).filter((c) => c[0] === "update");
