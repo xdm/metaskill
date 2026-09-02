@@ -9,6 +9,7 @@ trust:
   auto_threshold:
     min_installs: 5000
     require_clean_scan: true
+  deny_skills: []    # block one skill from an otherwise trusted publisher
   deny_publishers: []
 
 scan:                # forbidden outside the allowlist

@@ -11,6 +11,7 @@ export function defaultPolicy(): Policy {
     trust: {
       allowlist: ["anthropics", "vercel-labs"],
       autoThreshold: { minInstalls: 5000, requireCleanScan: true },
+      denySkills: [],
       denyPublishers: [],
     },
     scan: {
@@ -45,6 +46,7 @@ export function loadPolicy(): Policy {
 
     const t = y.trust ?? {};
     if (Array.isArray(t.allowlist)) p.trust.allowlist = t.allowlist.map(String);
+    if (Array.isArray(t.deny_skills)) p.trust.denySkills = t.deny_skills.map(String);
     if (Array.isArray(t.deny_publishers)) p.trust.denyPublishers = t.deny_publishers.map(String);
     const at = t.auto_threshold ?? {};
     if (typeof at.min_installs === "number") p.trust.autoThreshold.minInstalls = at.min_installs;
@@ -78,24 +80,37 @@ export function loadPolicy(): Policy {
   return p;
 }
 
-// Spec 4.5 decision table, in order. deny_publishers wins over everything;
-// nothing outside the allowlist auto-installs without a clean scan (unless
-// the operator explicitly sets require_clean_scan: false).
+// Spec 4.5 decision table, in order: deny_skills / deny_publishers -> deny;
+// dirty scan -> deny; estimated installs -> ask; scan advisories -> ask;
+// allowlisted publisher -> auto; installs >= min_installs with a clean scan
+// -> auto; otherwise ask. The scan and the estimated-installs check both
+// outrank the allowlist: a trusted publisher's repo can still be compromised
+// or contain a skill nobody has actually installed.
 export function decide(c: Candidate, scan: ScanResult, p: Policy): PolicyDecision {
+  if (p.trust.denySkills.includes(c.pkg)) {
+    return { decision: "deny", reason: `${c.pkg} is in deny_skills` };
+  }
   if (p.trust.denyPublishers.includes(c.publisher)) {
     return { decision: "deny", reason: `publisher ${c.publisher} is in deny_publishers` };
   }
-  if (p.trust.allowlist.includes(c.publisher)) {
-    return { decision: "auto", reason: `publisher ${c.publisher} is allowlisted` };
-  }
+  // The allowlist lowers the install threshold; it never waives the scan. A
+  // compromised commit in a trusted repository is the likeliest attack here.
   if (scan.status === "dirty") {
     return { decision: "deny", reason: `scan: ${scan.findings.slice(0, 3).join("; ") || "dirty"}` };
+  }
+  // An estimated count is a guess from sibling skills. Auto-installing on a
+  // guess is self-deception, however large the guess.
+  if (c.estimated) {
+    return { decision: "ask", reason: `no real install count (${c.installs} estimated from siblings)` };
   }
   // Popularity says nothing about content: measured across the registry, the
   // rate of pattern hits in real code is identical above and below the install
   // threshold. An advisory therefore outranks the threshold.
   if (scan.advisories.length) {
     return { decision: "ask", reason: `scan advisory: ${scan.advisories.slice(0, 3).join("; ")}` };
+  }
+  if (p.trust.allowlist.includes(c.publisher)) {
+    return { decision: "auto", reason: `publisher ${c.publisher} is allowlisted` };
   }
 
   const { minInstalls, requireCleanScan } = p.trust.autoThreshold;

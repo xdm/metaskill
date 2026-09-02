@@ -4,6 +4,9 @@ export interface Candidate {
   skillName: string; // "xlsx"
   installs: number;
   url: string;
+  // True when `installs` is a guess (e.g. carried over from sibling skills in
+  // the same repo) rather than a measured count. Never auto-installs.
+  estimated?: boolean;
 }
 
 export type ScanStatus = "clean" | "dirty" | "unavailable" | "skipped";
@@ -32,6 +35,7 @@ export interface Policy {
   trust: {
     allowlist: string[];
     autoThreshold: { minInstalls: number; requireCleanScan: boolean };
+    denySkills: string[];
     denyPublishers: string[];
   };
   scan: {

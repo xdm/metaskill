@@ -62,6 +62,34 @@ describe("policy.decide (spec 4.5 decision table)", () => {
     pol.trust.autoThreshold.requireCleanScan = false;
     expect(decide(cand("stranger", 5000), unavailable, pol).decision).toBe("auto");
   });
+
+  it("denies a skill listed in deny_skills", () => {
+    const p = defaultPolicy();
+    p.trust.denySkills = ["anthropics/skills@xlsx"];
+    const c = { pkg: "anthropics/skills@xlsx", publisher: "anthropics", skillName: "xlsx", installs: 500000, url: "" };
+    expect(decide(c, { status: "clean", findings: [], advisories: [] }, p).decision).toBe("deny");
+  });
+
+  it("asks about an estimated skill however high its sibling prior", () => {
+    const p = defaultPolicy();
+    const c = { pkg: "someone/repo@thing", publisher: "someone", skillName: "thing", installs: 999999, url: "", estimated: true };
+    const v = decide(c, { status: "clean", findings: [], advisories: [] }, p);
+    expect(v.decision).toBe("ask");
+    expect(v.reason).toMatch(/no real install count/);
+  });
+
+  it("does not let the allowlist waive a dirty scan", () => {
+    const p = defaultPolicy();
+    const c = { pkg: "anthropics/skills@xlsx", publisher: "anthropics", skillName: "xlsx", installs: 500000, url: "" };
+    const v = decide(c, { status: "dirty", findings: ["os.environ in scripts/run.py"], advisories: [] }, p);
+    expect(v.decision).toBe("deny");
+  });
+
+  it("still auto-installs an allowlisted publisher with a clean scan below the threshold", () => {
+    const p = defaultPolicy();
+    const c = { pkg: "anthropics/skills@tiny", publisher: "anthropics", skillName: "tiny", installs: 12, url: "" };
+    expect(decide(c, { status: "clean", findings: [], advisories: [] }, p).decision).toBe("auto");
+  });
 });
 
 describe("policy.loadPolicy", () => {
@@ -116,6 +144,14 @@ describe("policy.loadPolicy", () => {
     expect(p.domains.scraping).toBe("me/skills@crawler");
     expect(p.log.path).toBe(path.join(os.homedir(), "custom/log.jsonl"));
     expect(p.log.retentionDays).toBe(7);
+  });
+
+  it("reads deny_skills from the yaml", () => {
+    fs.writeFileSync(
+      path.join(home, "metaskill.yaml"),
+      ["version: 1", "trust:", "  deny_skills: [bad/repo@thing]"].join("\n"),
+    );
+    expect(loadPolicy().trust.denySkills).toEqual(["bad/repo@thing"]);
   });
 
   it("ignores the retired classifier.llm/model keys from older configs", () => {
