@@ -47,17 +47,22 @@ it. Example:
 ## On `find`
 
 Every session opens with a `[metaskill] Standing protocol` block naming a
-`find` command. It stands whether or not this skill is loaded: before you
-start a task a specialised skill would do better, derive a 2-4 word English
-capability phrase from the task ("reddit automation", "invoice ocr") and run
-that command via Bash. The user's prompt may be in any language; the query is
-always English, and you derive it from the task rather than translating the
-prompt. Then act on what it prints:
+`find` command. It stands whether or not this skill is loaded: at the start of
+every task, before you begin work, derive a 2-4 word English capability phrase
+from the task ("reddit automation", "invoice ocr") and run that command via
+Bash. Run it even when you are sure no skill is needed — checking that is its
+job. Once per task, not once per session; only pure conversation is exempt.
+The user's prompt may be in any language; the query is always English, and you
+derive it from the task rather than translating the prompt. Then act on what
+it prints:
 
 - **`Installed now:` / `Already present:`** — read that SKILL.md and follow it.
-- **`Top matches for ...`** — nothing qualified for auto-install. Ask the user
-  ONE question naming the package, its install count and its publisher, and
-  install only on an explicit yes.
+- **`Top matches for ...`** / **`live search found ...`** — nothing qualified
+  for auto-install. Ask the user ONE question naming the package, its install
+  count and its publisher, then install only on an explicit yes, using the
+  command that line prints.
+- **`Install timed out`** / **`Install failed`** — tell the user; never retry
+  silently.
 - **`No skills found`** — solve the task yourself, and say nothing about
   metaskill.
 

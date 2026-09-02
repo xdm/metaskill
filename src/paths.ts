@@ -11,6 +11,15 @@ export function cliEntryPath(): string {
   return path.join(path.dirname(fileURLToPath(import.meta.url)), "cli.js");
 }
 
+// Every command metaskill asks the in-session model to run — the SessionStart
+// protocol and `find`'s own output — must name the SAME interpreter and path.
+// `metaskill` is not on PATH for a plugin-cache or npx install, so the bare
+// name is the spelling most likely to fail; and two different spellings in one
+// turn is a reason for a model to trust neither.
+export function metaskillCmd(): string {
+  return `node "${cliEntryPath()}"`;
+}
+
 // init copies the package here and points hooks at it, so `npx ... init`
 // survives npx cache pruning and node version switches (the running copy's
 // own path is ephemeral in both cases).

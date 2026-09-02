@@ -360,7 +360,7 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     const r = await runCli(["find", "thingamajig", "--index", idx], { home, env: { STUB_ADD_FAIL: "1" } });
     expect(r.code).toBe(0);
     expect(r.stdout).toContain(
-      "Install failed — ask the user, then run: metaskill install anthropics/skills@thingamajig --force",
+      `Install failed — ask the user, then run: node "${CLI}" install anthropics/skills@thingamajig --force`,
     );
     expect(r.stdout).not.toContain("Installed now:");
     expect(readLockFile(home)["anthropics/skills@thingamajig"]).toBeUndefined();
@@ -387,7 +387,7 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     expect(r.stdout).toContain("someorg/repo@snorklex (42 installs");
     expect(r.stdout).toContain("otherorg/tools@snorklex-lite (~12 est installs");
     expect(r.stdout).toContain("[ask:");
-    expect(r.stdout).toContain("On an explicit yes run: metaskill install <pkg> --force");
+    expect(r.stdout).toContain(`On an explicit yes run: node "${CLI}" install <pkg> --force`);
     fs.rmSync(home, { recursive: true, force: true });
   });
 
@@ -523,7 +523,7 @@ describe("init end-to-end (spec 4.1)", () => {
     expect(routeCmd).toContain(path.join(".metaskill", "bin", "dist", "cli.js"));
     expect(fs.existsSync(path.join(home, ".metaskill", "bin", "dist", "cli.js"))).toBe(true);
     expect(fs.existsSync(path.join(home, ".metaskill", "bin", "skills", "metaskill", "SKILL.md"))).toBe(true);
-    expect(s1.hooks.SessionStart[0].matcher).toBe("startup|resume");
+    expect(s1.hooks.SessionStart[0].matcher).toBe("startup|resume|clear");
     expect(fs.existsSync(path.join(home, ".metaskill", "metaskill.yaml"))).toBe(true);
     expect(fs.existsSync(path.join(home, ".claude", "skills", "metaskill", "SKILL.md"))).toBe(true);
 

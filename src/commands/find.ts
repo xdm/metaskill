@@ -1,4 +1,5 @@
 import { loadIndex, search } from "../index/read.js";
+import { metaskillCmd } from "../paths.js";
 import type { IndexRecord } from "../index/types.js";
 import { discoverByQuery, publisherOf } from "../discover.js";
 import { installSkill } from "../install.js";
@@ -100,7 +101,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       const top = [...cands].sort((a, b) => b.installs - a.installs)[0]!;
       process.stdout.write(
         `[metaskill] Not in the local index; live search found ${top.pkg} (${top.installs} installs).\n` +
-          `Ask the user one question before installing; on an explicit yes run: metaskill install ${top.pkg} --force\n${pluginLine}`,
+          `Ask the user one question before installing; on an explicit yes run: ${metaskillCmd()} install ${top.pkg} --force\n${pluginLine}`,
       );
       logFind([], []);
       return 0;
@@ -123,7 +124,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
         return 0;
       }
       process.stdout.write(
-        `[metaskill] Install ${res.timedOut ? "timed out" : "failed"} — ask the user, then run: metaskill install ${auto.r.pkg} --force\n${pluginLine}`,
+        `[metaskill] Install ${res.timedOut ? "timed out" : "failed"} — ask the user, then run: ${metaskillCmd()} install ${auto.r.pkg} --force\n${pluginLine}`,
       );
       logFind([], []);
       return 0;
@@ -132,7 +133,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     process.stdout.write(
       `[metaskill] Top matches for "${q}" — none auto-installable, ask the user ONE question before installing any:\n` +
         rows.map((x) => line(x.r, x.v.decision, x.v.reason)).join("\n") +
-        `\nOn an explicit yes run: metaskill install <pkg> --force\n${pluginLine}`,
+        `\nOn an explicit yes run: ${metaskillCmd()} install <pkg> --force\n${pluginLine}`,
     );
     logFind([], []);
     return 0;

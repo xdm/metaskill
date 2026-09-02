@@ -22,8 +22,16 @@ function upsert(groups: HookGroup[], sub: "route" | "sync", matcher: string | un
   for (const g of groups) {
     for (const h of g.hooks ?? []) {
       if (isMetaskillHookCommand(h.command, sub)) {
-        h.command = hookCommand(sub); // refresh path and timeout on re-init
+        h.command = hookCommand(sub); // refresh path, timeout and matcher on re-init
         h.timeout = timeout;
+        // Without this an entry written by an older metaskill keeps its
+        // matcher forever and re-running `init` cannot repair it — which is
+        // how npm-install users ended up permanently missing `clear`, and so
+        // getting no protocol at all for the rest of a session after /clear.
+        // Only when our hook is alone in its group: a group we share with a
+        // foreign hook is that hook's config too, and addHooks promises not to
+        // touch anything but its own.
+        if (matcher && (g.hooks ?? []).length === 1) g.matcher = matcher;
         return;
       }
     }
@@ -43,7 +51,11 @@ export function addHooks(settings: Settings): Settings {
   // install — a 30s kill can land after the install but before the log line.
   upsert(settings.hooks.UserPromptSubmit, "route", undefined, 90);
   settings.hooks.SessionStart ??= [];
-  upsert(settings.hooks.SessionStart, "sync", "startup|resume", 60);
+  // `clear` too: a /clear that drops the protocol leaves the rest of that
+  // session with none. 120s, not 60: the protocol is emitted before any of
+  // sync's slow work, but the index refresh behind it needs room to finish
+  // rather than being cut off mid-download every session.
+  upsert(settings.hooks.SessionStart, "sync", "startup|resume|clear", 120);
   return settings;
 }
 

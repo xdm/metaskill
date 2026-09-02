@@ -10,8 +10,48 @@ describe("settings hooks merge (spec 4.1)", () => {
     expect(ups[0]!.hooks![0]!.timeout).toBe(90);
     expect(ups[0]!.matcher).toBeUndefined(); // UserPromptSubmit has no matcher support
     const ss = s.hooks!.SessionStart!;
-    expect(ss[0]!.matcher).toBe("startup|resume");
+    expect(ss[0]!.matcher).toBe("startup|resume|clear");
     expect(ss[0]!.hooks![0]!.command).toBe(hookCommand("sync"));
+    expect(ss[0]!.hooks![0]!.timeout).toBe(120);
+  });
+
+  it("repairs a stale matcher and timeout on re-init", () => {
+    // upsert used to refresh command and timeout but never the matcher, so an
+    // entry written by an older metaskill kept `startup|resume` forever and
+    // re-running `init` could not repair it: after a /clear those sessions got
+    // no protocol at all, with no self-healing path.
+    const stale: Settings = {
+      hooks: {
+        SessionStart: [
+          { matcher: "startup|resume", hooks: [{ type: "command", command: hookCommand("sync"), timeout: 60 }] },
+        ],
+      },
+    };
+    const ss = addHooks(stale).hooks!.SessionStart!;
+    expect(ss).toHaveLength(1); // repaired in place, not duplicated
+    expect(ss[0]!.matcher).toBe("startup|resume|clear");
+    expect(ss[0]!.hooks![0]!.timeout).toBe(120);
+  });
+
+  it("never rewrites the matcher of a group it shares with a foreign hook", () => {
+    // That group is the foreign hook's configuration too, and addHooks
+    // promises to touch nothing but its own entry.
+    const shared: Settings = {
+      hooks: {
+        SessionStart: [
+          {
+            matcher: "startup",
+            hooks: [
+              { type: "command", command: "other-tool sync" },
+              { type: "command", command: hookCommand("sync"), timeout: 60 },
+            ],
+          },
+        ],
+      },
+    };
+    const ss = addHooks(shared).hooks!.SessionStart!;
+    expect(ss[0]!.matcher).toBe("startup");
+    expect(ss[0]!.hooks![1]!.timeout).toBe(120); // ours still refreshed
   });
 
   it("preserves existing foreign hooks and unknown settings keys", () => {
