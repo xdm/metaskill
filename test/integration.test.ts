@@ -526,6 +526,102 @@ describe("sync end-to-end (spec 4.3)", () => {
   });
 });
 
+describe("update/sync: a dirty scan blocks even an allowlisted package (spec §7 Defect 1)", () => {
+  function seedInstalled(home: string, skill: string, version: string) {
+    const dir = path.join(home, ".agents", "skills", skill);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "SKILL.md"), `---\nname: ${skill}\nversion: ${version}\n---\n`);
+  }
+
+  // Seeds a locked, installed anthropics/skills@xlsx plus the local
+  // index.json that loadIndex() reads with no explicit path — exactly how
+  // update.ts and sync.ts call it — carrying the given verdict for it.
+  function seed(home: string, scan: "clean" | "dirty") {
+    fs.mkdirSync(path.join(home, ".metaskill"), { recursive: true });
+    fs.writeFileSync(
+      path.join(home, ".metaskill", "skills-lock.json"),
+      JSON.stringify({
+        "anthropics/skills@xlsx": {
+          pkg: "anthropics/skills@xlsx", skill: "xlsx", installedAt: "2026-08-01T00:00:00Z", version: "1.2.3",
+        },
+      }),
+    );
+    seedInstalled(home, "xlsx", "1.2.3");
+    fs.writeFileSync(
+      path.join(home, ".metaskill", "index.json"),
+      JSON.stringify({
+        schemaVersion: 1, builtAt: "2026-08-31T00:00:00.000Z", skillCount: 1, repoCount: 1,
+        skills: [
+          {
+            name: "xlsx", source: "anthropics/skills", pkg: "anthropics/skills@xlsx",
+            description: "d", installs: 999999, installsPrior: null, estimated: false, atRepoRoot: false,
+            scan, scanFindings: scan === "dirty" ? ["eval("] : [], scanAdvisories: [],
+          },
+        ],
+      }),
+    );
+  }
+
+  it("`metaskill update` skips a dirty-scanned allowlisted package", async () => {
+    const home = freshHome("update-dirty");
+    seed(home, "dirty");
+    const r = await runCli(["update"], { home });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("skip xlsx: index scan is dirty");
+    expect(r.stderr).toContain("no flag bypasses a dirty scan");
+    expect(stubCalls(home).filter((c) => c[0] === "update")).toEqual([]);
+    expect(readLockFile(home)["anthropics/skills@xlsx"]!.version).toBe("1.2.3");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("`metaskill update --force` does not bypass a dirty scan — deny-tier, not ask-tier", async () => {
+    const home = freshHome("update-dirty-force");
+    seed(home, "dirty");
+    const r = await runCli(["update", "--force"], { home });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("skip xlsx: index scan is dirty");
+    expect(stubCalls(home).filter((c) => c[0] === "update")).toEqual([]);
+    expect(readLockFile(home)["anthropics/skills@xlsx"]!.version).toBe("1.2.3");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("`metaskill update` proceeds once the verdict is clean", async () => {
+    const home = freshHome("update-clean");
+    seed(home, "clean");
+    const r = await runCli(["update"], { home, env: { STUB_UPDATE_VERSION: "9.9.9" } });
+    expect(r.code).toBe(0);
+    expect(stubCalls(home).filter((c) => c[0] === "update")).toHaveLength(1);
+    expect(readLockFile(home)["anthropics/skills@xlsx"]!.version).toBe("9.9.9");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("sync's unattended auto-update skips the same dirty package instead of updating it on a timer", async () => {
+    const home = freshHome("sync-dirty");
+    seed(home, "dirty");
+    const r = await runCli(["sync"], { home, env: { STUB_UPDATE_VERSION: "9.9.9" } });
+    expect(r.code).toBe(0);
+    expect(stubCalls(home).filter((c) => c[0] === "update")).toEqual([]);
+    expect(readLockFile(home)["anthropics/skills@xlsx"]!.version).toBe("1.2.3");
+    // Must not vanish silently: parked in pendingNotices like every other
+    // sync notice, to surface on the next session's emit.
+    const notices = readStateFile(home).pendingNotices!.join("\n");
+    expect(notices).toContain("Skipped xlsx");
+    expect(notices).toContain("index scan is dirty");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("sync updates the same package normally once the verdict is clean", async () => {
+    const home = freshHome("sync-clean");
+    seed(home, "clean");
+    const r = await runCli(["sync"], { home, env: { STUB_UPDATE_VERSION: "9.9.9" } });
+    expect(r.code).toBe(0);
+    expect(stubCalls(home).filter((c) => c[0] === "update")).toHaveLength(1);
+    expect(readLockFile(home)["anthropics/skills@xlsx"]!.version).toBe("9.9.9");
+    expect(readStateFile(home).pendingNotices!.join("\n")).toContain("Updated skills: xlsx");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+});
+
 describe("manual install: deny is final (spec §5)", () => {
   it("--force bypasses ask but never deny", async () => {
     const home = freshHome("deny");

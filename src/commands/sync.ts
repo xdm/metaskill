@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import { publisherOf } from "../discover.js";
 import { parseFrontmatter } from "../frontmatter.js";
+import { loadIndex } from "../index/read.js";
 import { refreshIndex } from "../index/refresh.js";
 import { readLock, writeLock } from "../lock.js";
 import { pruneLog } from "../log.js";
@@ -9,6 +10,7 @@ import { agentsSkillsDir, claudeUserSkillsDir, skillsCmd } from "../paths.js";
 import { loadPolicy } from "../policy.js";
 import { protocolText } from "../protocol.js";
 import { readState, writeState } from "../state.js";
+import { blockedByScan } from "./update.js";
 import path from "node:path";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -77,8 +79,21 @@ export async function syncCommand(opts: { force?: boolean } = {}): Promise<numbe
     const entries = Object.values(lock);
     if (!entries.length) return 0;
 
-    const allowlisted = entries.filter((e) => policy.trust.allowlist.includes(publisherOf(e.pkg)));
+    // Spec §7 Defect 1 reaches here too: the allowlist lowers the install
+    // threshold, it never waives the scan, and this path runs unattended on a
+    // timer. `index` is whatever refreshIndex() above just landed, or the
+    // packaged snapshot, or null — blockedByScan treats all three safely.
+    const index = loadIndex();
+    const allowlisted = entries.filter(
+      (e) => policy.trust.allowlist.includes(publisherOf(e.pkg)) && !blockedByScan(index, e.pkg),
+    );
     const others = entries.filter((e) => !policy.trust.allowlist.includes(publisherOf(e.pkg)));
+    // Allowlisted but scanned dirty: excluded from `allowlisted` above, so the
+    // update call below never touches it — but unlike `others` this is not a
+    // trust-tier skip, so it must not vanish from the report silently.
+    const dirtyBlocked = entries.filter(
+      (e) => policy.trust.allowlist.includes(publisherOf(e.pkg)) && blockedByScan(index, e.pkg),
+    );
 
     const updated: string[] = [];
     if (allowlisted.length) {
@@ -99,6 +114,11 @@ export async function syncCommand(opts: { force?: boolean } = {}): Promise<numbe
     const lines: string[] = [];
     if (idx.updated) lines.push(`[metaskill] Skill index refreshed: ${idx.skillCount} skills.`);
     if (updated.length) lines.push(`[metaskill] Updated skills: ${updated.join(", ")}.`);
+    for (const e of dirtyBlocked) {
+      lines.push(
+        `[metaskill] Skipped ${e.skill}: index scan is dirty (${blockedByScan(index, e.pkg)}) — no flag bypasses a dirty scan.`,
+      );
+    }
     if (others.length) {
       lines.push(
         `[metaskill] Skills outside the allowlist are never auto-updated: ${others

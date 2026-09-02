@@ -99,3 +99,16 @@ export function search(index: IndexFile, query: string, limit = 5): Hit[] {
   hits.sort((a, b) => b.score - a.score || (a.record.pkg ?? "").localeCompare(b.record.pkg ?? ""));
   return hits.slice(0, limit);
 }
+
+// Exact pkg lookup for the update paths, which know the package and need its
+// verdict — not a ranked search. The index can carry duplicate pkg rows, so a
+// dirty row wins over a clean one: the safe reading of ambiguous data.
+export function findByPkg(index: IndexFile, pkg: string): IndexRecord | null {
+  let hit: IndexRecord | null = null;
+  for (const r of index.skills) {
+    if (r.pkg !== pkg) continue;
+    if (r.scan === "dirty") return r;
+    hit ??= r;
+  }
+  return hit;
+}

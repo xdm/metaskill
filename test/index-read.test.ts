@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { search, tokenize } from "../src/index/read.js";
+import { findByPkg, search, tokenize } from "../src/index/read.js";
 import type { IndexFile } from "../src/index/types.js";
 
 const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures/index-sample.json");
@@ -66,5 +66,29 @@ describe("search", () => {
     const rare = search(index, "kubernetes", 1);
     const common = search(index, "the and for", 1);
     if (rare.length && common.length) expect(rare[0]!.score).toBeGreaterThan(common[0]!.score);
+  });
+});
+
+describe("findByPkg", () => {
+  it("finds a record by exact pkg", () => {
+    const r = findByPkg(index, "anthropics/skills@xlsx");
+    expect(r?.pkg).toBe("anthropics/skills@xlsx");
+  });
+
+  it("returns null for a pkg that is not indexed", () => {
+    expect(findByPkg(index, "nobody/nothing@nowhere")).toBeNull();
+  });
+
+  it("prefers a dirty row when a pkg has duplicate records", () => {
+    const dup: IndexFile = {
+      schemaVersion: 1, builtAt: "2026-08-31T00:00:00.000Z", skillCount: 2, repoCount: 1,
+      skills: [
+        { name: "a", source: "o/r", pkg: "o/r@a", description: "d", installs: 1, installsPrior: null,
+          estimated: false, atRepoRoot: false, scan: "clean", scanFindings: [], scanAdvisories: [] },
+        { name: "a", source: "o/r", pkg: "o/r@a", description: "d", installs: 1, installsPrior: null,
+          estimated: false, atRepoRoot: false, scan: "dirty", scanFindings: ["eval("], scanAdvisories: [] },
+      ],
+    };
+    expect(findByPkg(dup, "o/r@a")?.scan).toBe("dirty");
   });
 });

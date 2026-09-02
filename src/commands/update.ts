@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { publisherOf } from "../discover.js";
 import { parseFrontmatter } from "../frontmatter.js";
+import { findByPkg, loadIndex } from "../index/read.js";
+import type { IndexFile } from "../index/types.js";
 import { readLock, writeLock } from "../lock.js";
 import { agentsSkillsDir, claudeUserSkillsDir, skillsCmd } from "../paths.js";
 import { loadPolicy } from "../policy.js";
@@ -31,9 +33,22 @@ function installedVersion(skill: string): string | undefined {
   return undefined;
 }
 
+// Spec §7 Defect 1 applies to updating, not only to installing: the allowlist
+// lowers the install threshold, it never waives the scan. Only a positive
+// `dirty` verdict blocks — an unknown package or a missing index leaves the
+// existing behaviour intact, matching decide()'s own treatment of `unknown`.
+export function blockedByScan(index: IndexFile | null, pkg: string): string | null {
+  if (!index) return null;
+  const r = findByPkg(index, pkg);
+  if (!r || r.scan !== "dirty") return null;
+  return r.scanFindings[0] ?? "dirty";
+}
+
 // Manual `metaskill update [names...]` (spec 4.4). Same trust rules as sync:
 // allowlisted publishers update freely; others need --force (that's the `ask`
-// tier); deny_publishers are skipped no matter what.
+// tier); deny_publishers are skipped no matter what; and — ahead of both,
+// unbypassable by --force exactly like deny_publishers — a package the local
+// index scanned dirty is never updated.
 export async function updateCommand(names: string[], flags: UpdateFlags): Promise<number> {
   const policy = loadPolicy();
   const lock = readLock();
@@ -44,7 +59,13 @@ export async function updateCommand(names: string[], flags: UpdateFlags): Promis
     return 0;
   }
 
+  const index = loadIndex();
   const approved = entries.filter((e) => {
+    const finding = blockedByScan(index, e.pkg);
+    if (finding) {
+      process.stderr.write(`skip ${e.skill}: index scan is dirty (${finding}) — no flag bypasses a dirty scan.\n`);
+      return false;
+    }
     const pub = publisherOf(e.pkg);
     if (policy.trust.denyPublishers.includes(pub)) {
       process.stderr.write(`skip ${e.skill}: publisher ${pub} is denied (no flag bypasses deny).\n`);
