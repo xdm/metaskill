@@ -11,6 +11,7 @@ Commands:
   route [--domains a,b]            UserPromptSubmit hook body (stdin JSON), or
         [--search "words"]         explicit-domain / free registry search runs
                                    for in-session classification by the model
+  find "<words>"   find a skill for a capability
   sync [--force]                   SessionStart hook body: daily update of allowlisted skills
   install <pkg> [--domain d] [--force]   Install one skill through policy + scan
   update [names...] [--force]      Update installed skills (allowlist without --force)
@@ -31,7 +32,7 @@ function parseArgs(argv: string[]): Args {
   const pos: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (a === "--domain" || a === "--domains" || a === "--search" || a === "-n") {
+    if (a === "--domain" || a === "--domains" || a === "--search" || a === "--index" || a === "-n") {
       flags[a === "-n" ? "n" : a.slice(2)] = argv[++i] ?? "";
     } else if (a.startsWith("--")) {
       flags[a.slice(2)] = true;
@@ -82,6 +83,10 @@ async function main(): Promise<number> {
           : undefined;
       const search = typeof flags.search === "string" ? flags.search : undefined;
       return routeCommand(domains || search !== undefined ? "" : await readStdin(), { domains, search });
+    }
+    case "find": {
+      const { findCommand } = await import("./commands/find.js");
+      return findCommand(pos.join(" "), { index: typeof flags.index === "string" ? flags.index : undefined });
     }
     case "sync": {
       const { syncCommand } = await import("./commands/sync.js");
