@@ -70,6 +70,12 @@ export interface DiscoverOpts {
   now?: Date;
   timeoutMs?: number;
   runner?: Runner;
+  // Called when the live lookup throws (timeout, missing npx, network). The
+  // return value is unchanged — callers still get [] or a stale cache entry —
+  // but an empty result from a failed call means something different to the
+  // user than an empty result from a successful one, and without this hook the
+  // two are indistinguishable at the call site.
+  onFailure?: (err: unknown) => void;
 }
 
 // Queries are short capability terms (taxonomy queries, or a phrase the
@@ -89,7 +95,8 @@ async function discoverRaw(cacheKey: string, query: string, opts: DiscoverOpts):
     cache.discovery[cacheKey] = { ts: now.toISOString(), candidates };
     writeCache(cache);
     return candidates;
-  } catch {
+  } catch (err) {
+    opts.onFailure?.(err);
     return hit?.candidates ?? [];
   }
 }

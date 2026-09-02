@@ -321,6 +321,43 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     fs.rmSync(home, { recursive: true, force: true });
   });
 
+  it("distinguishes a registry that answered nothing from one that never answered", async () => {
+    // Both end with zero candidates, but only one of them is evidence that no
+    // skill exists. Printing `No skills found` for a timeout would have the
+    // model deny a skill on the strength of a lookup that never completed.
+    const home = freshHome("find-live");
+    const idx = writeIndex(home, [
+      {
+        name: "unrelated", source: "acme/tools", pkg: "acme/tools@unrelated",
+        description: "Nothing to do with the query.", installs: 3, installsPrior: null,
+        estimated: false, atRepoRoot: false, scan: "clean", scanFindings: [], scanAdvisories: [],
+      },
+    ]);
+
+    const empty = await runCli(["find", "zzqq nomatch", "--index", idx], { home, env: { STUB_FIND_EMPTY: "1" } });
+    expect(empty.code).toBe(0);
+    expect(empty.stdout).toContain('No skills found for "zzqq nomatch"');
+    expect(empty.stdout).not.toContain("Registry did not answer");
+
+    // Fresh home: the 24h discovery cache would otherwise serve the empty run.
+    const home2 = freshHome("find-live-fail");
+    const idx2 = writeIndex(home2, [
+      {
+        name: "unrelated", source: "acme/tools", pkg: "acme/tools@unrelated",
+        description: "Nothing to do with the query.", installs: 3, installsPrior: null,
+        estimated: false, atRepoRoot: false, scan: "clean", scanFindings: [], scanAdvisories: [],
+      },
+    ]);
+    const failed = await runCli(["find", "zzqq nomatch", "--index", idx2], { home: home2, env: { STUB_FIND_FAIL: "1" } });
+    expect(failed.code).toBe(0); // never breaks the caller
+    expect(failed.stdout).toContain('Registry did not answer for "zzqq nomatch"');
+    expect(failed.stdout).toContain("this is not a miss");
+    expect(failed.stdout).not.toContain("No skills found");
+
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home2, { recursive: true, force: true });
+  });
+
   it("too-short query: usage error, exit 2", async () => {
     const home = freshHome("find-short");
     const r = await runCli(["find", "ab"], { home });

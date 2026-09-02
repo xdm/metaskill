@@ -61,6 +61,12 @@ if (cmd === "--version") {
 }
 
 if (cmd === "find") {
+  // A registry that answered "nothing" and one that never answered are
+  // different facts; metaskill prints a different line for each.
+  if (process.env.STUB_FIND_FAIL === "1") {
+    console.error("stub: find failed");
+    process.exit(1);
+  }
   if (process.env.STUB_FIND_EMPTY === "1") process.exit(0);
   const query = args[1] ?? "";
   const key = Object.keys(FIND_FIXTURES).find((k) => query.includes(k));

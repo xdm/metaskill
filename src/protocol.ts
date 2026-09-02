@@ -28,6 +28,10 @@ import { metaskillCmd } from "./paths.js";
 //   - It says what to do when no capability phrase is obvious ("fix this
 //     failing test" has none), because "I cannot form a query" is the next
 //     shape the escape hatch takes once "I've got this" is closed.
+//   - `Registry did not answer` is listed separately from `No skills found`.
+//     A live lookup that timed out is not evidence that no skill exists, and a
+//     model given one label for both facts will report a coverage gap it never
+//     established.
 //
 // Budget: the PROSE stays under 1400 chars (test/protocol.test.ts measures it
 // with both absolute paths removed). The paths are not something the wording
@@ -35,7 +39,7 @@ import { metaskillCmd } from "./paths.js";
 // cliEntryPath() is longer for a plugin-cache install than in this checkout.
 export function protocolText(): string {
   return [
-    "[metaskill] Standing protocol — in force for every task in this session.",
+    "[metaskill] Standing protocol — in force for every task this session.",
     "",
     "At the start of every task, before you begin work, run:",
     "",
@@ -45,13 +49,12 @@ export function protocolText(): string {
     "Run it even when you are sure no skill is needed — checking that is its job.",
     "Once per task, not once per session; only pure conversation is exempt.",
     "",
-    "Not only a lookup: on a match your policy already trusts — an allowlisted",
-    "publisher, or 5000+ installs with a clean scan — it installs that skill for",
-    "you. Tell the user what it installed.",
+    "Not only a lookup: on a match your policy already trusts it installs that",
+    "skill for you, unasked. Tell the user what it installed.",
     "",
     "The user's prompt may be in any language; the query is always English,",
     "derived from the task rather than translated. Name the artefact or domain,",
-    "not the action: a file format, a framework, a database, a platform API, a",
+    "not the action: a file format, framework, database, platform API, or a",
     "documented craft like SEO or copywriting — skip only when nothing like that",
     "is in play.",
     "",
@@ -61,6 +64,7 @@ export function protocolText(): string {
     "  package, its install count and its publisher, then install only on an",
     "  explicit yes, with the command that line prints.",
     "- `Install timed out` / `failed` — tell the user; never retry silently.",
+    "- `Registry did not answer` — not a miss. Retry once, or solve it.",
     "- `No skills found` — solve the task yourself, and say nothing about metaskill.",
     "",
     "Never run `npx skills add` or edit ~/.claude/skills directly.",

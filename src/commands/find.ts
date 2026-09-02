@@ -101,15 +101,32 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       // only on this path. route.ts keeps the 10s default: it runs once per
       // prompt with no model waiting on the result.
       //
-      // MEASURED, and the number is uncomfortably tight: `npx -y skills@1.5.23
-      // find` costs 2.86s / 3.06s / 3.08s on three warm runs (macOS, warm npx
-      // cache), so 3s sits ON the operation's latency rather than above it and
-      // a long-tail lookup is close to a coin flip. A failure caches nothing,
-      // so a repeated query pays it again every time. Re-measure before
-      // treating this as settled; 4s is the smallest value that clears the
-      // observed maximum while still being 2.5x cheaper than the old default.
-      const cands = await discoverByQuery(q, { timeoutMs: 3_000 });
+      // 4s specifically, and it is a measured number, not a round one. `npx -y
+      // skills@1.5.23 find` costs 2.86s / 3.06s / 3.08s on three warm runs
+      // (macOS, warm npx cache). 3s was tried and sits ON that latency rather
+      // than above it, which made a long-tail lookup close to a coin flip
+      // while still charging the full wait; 4s clears the observed maximum by
+      // ~0.9s. Do not round it back down to 3 (the lookup stops working and
+      // the cost stays) or back up to 10 (the wait is what makes a model
+      // abandon the protocol). Re-measure before changing it.
+      let liveFailed = false;
+      const cands = await discoverByQuery(q, {
+        timeoutMs: 4_000,
+        onFailure: () => {
+          liveFailed = true;
+        },
+      });
       if (!cands.length) {
+        // A lookup that never answered is not the same fact as a registry that
+        // answered "nothing". Printing `No skills found` for both would have
+        // the model tell the user no skill exists on the strength of a timeout.
+        if (liveFailed) {
+          process.stdout.write(
+            `[metaskill] Registry did not answer for "${q}" — this is not a miss. Solve the task without a skill, or run find once more.\n${pluginLine}`,
+          );
+          logFind([], []);
+          return 0;
+        }
         process.stdout.write(`[metaskill] No skills found for "${q}". Solve the task without one.\n${pluginLine}`);
         logFind([], []);
         return 0;

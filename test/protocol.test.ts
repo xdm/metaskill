@@ -68,6 +68,10 @@ describe("protocolText", () => {
       "live search found",
       "timed out",
       "No skills found",
+      // A timed-out live lookup and a registry that answered "nothing" are
+      // different facts. One label for both would have the model report a
+      // coverage gap it never established.
+      "Registry did not answer",
     ]) {
       expect(t, `protocol names "${label}"`).toContain(label);
       expect(FIND_SRC, `find.ts prints "${label}"`).toContain(label);
