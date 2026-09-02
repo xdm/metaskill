@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { decide, defaultPolicy, loadPolicy } from "../src/policy.js";
-import type { Candidate, ScanResult } from "../src/types.js";
+import type { Candidate, Policy, ScanResult } from "../src/types.js";
 
 function cand(publisher: string, installs: number): Candidate {
   return { pkg: `${publisher}/repo@skill`, publisher, skillName: "skill", installs, url: "" };
@@ -13,8 +13,20 @@ const dirty: ScanResult = { status: "dirty", findings: ["curl found"], advisorie
 const unavailable: ScanResult = { status: "unavailable", findings: [], advisories: [] };
 const skipped: ScanResult = { status: "skipped", findings: [], advisories: [] };
 
+// The decision table is exercised with the auto-install knob ON. These tests
+// are about which verdict the table computes; the gate that sits over it —
+// off by default, so that in a stock install every `auto` below reads
+// `ask: auto-install is off; ...` — has its own describe block further down.
+// Testing the table through the default policy would collapse six distinct
+// rows into the same answer and pin nothing.
+function tablePolicy(): Policy {
+  const p = defaultPolicy();
+  p.trust.autoInstall = true;
+  return p;
+}
+
 describe("policy.decide (spec 4.5 decision table)", () => {
-  const p = defaultPolicy(); // allowlist: anthropics, vercel-labs; min_installs 5000
+  const p = tablePolicy(); // allowlist: anthropics, vercel-labs; min_installs 5000
 
   it("deny_publishers -> deny, even when allowlisted or popular", () => {
     const pol = defaultPolicy();
@@ -52,7 +64,7 @@ describe("policy.decide (spec 4.5 decision table)", () => {
     // Deliberate coupling: the switch is the user saying they do not want a
     // clean verdict demanded of anyone. Held only against strangers, it would
     // leave allowlisted publishers treated more strictly than unknown ones.
-    const pol = defaultPolicy();
+    const pol = tablePolicy();
     pol.trust.autoThreshold.requireCleanScan = false;
     expect(decide(cand("anthropics", 0), skipped, pol).decision).toBe("auto");
   });
@@ -89,7 +101,7 @@ describe("policy.decide (spec 4.5 decision table)", () => {
   });
 
   it("require_clean_scan: false lets threshold alone auto-install", () => {
-    const pol = defaultPolicy();
+    const pol = tablePolicy();
     pol.trust.autoThreshold.requireCleanScan = false;
     expect(decide(cand("stranger", 5000), unavailable, pol).decision).toBe("auto");
   });
@@ -140,9 +152,57 @@ describe("policy.decide (spec 4.5 decision table)", () => {
   });
 
   it("still auto-installs an allowlisted publisher with a clean scan below the threshold", () => {
-    const p = defaultPolicy();
+    const p = tablePolicy();
     const c = { pkg: "anthropics/skills@tiny", publisher: "anthropics", skillName: "tiny", installs: 12, url: "" };
     expect(decide(c, { status: "clean", findings: [], advisories: [] }, p).decision).toBe("auto");
+  });
+});
+
+// The gate over the table. `find` ranks and the model picks; `install`
+// enforces policy — and until that loop is proven in real use, the one thing
+// nothing may do is install unattended. Every `auto` the table can produce
+// leaves decide() through this one check, so a row added to the table later
+// is covered without anyone remembering to cover it.
+describe("policy.decide: the trust.auto_install gate", () => {
+  it("downgrades auto to ask while trust.auto_install is off (the default)", () => {
+    const p = defaultPolicy();
+    expect(p.trust.autoInstall).toBe(false);
+    const v = decide(cand("anthropics", 500000), clean, p);
+    expect(v.decision).toBe("ask");
+    expect(v.reason).toMatch(/auto-install is off/);
+    // The computed verdict is carried through, not thrown away: the reason a
+    // human reads still says why the package WOULD have qualified.
+    expect(v.reason).toContain("allowlisted");
+  });
+
+  it("downgrades the threshold row too, not only the allowlist row", () => {
+    // Two different `auto` returns in the table; one gate. A fix applied per
+    // branch is the shape this test exists to rule out.
+    const v = decide(cand("stranger", 500000), clean, defaultPolicy());
+    expect(v.decision).toBe("ask");
+    expect(v.reason).toMatch(/auto-install is off/);
+    expect(v.reason).toContain("installs >= 5000");
+  });
+
+  it("returns auto for a trusted clean match once auto_install is on", () => {
+    const p = defaultPolicy();
+    p.trust.autoInstall = true;
+    expect(decide(cand("anthropics", 500000), clean, p).decision).toBe("auto");
+  });
+
+  it("never turns a deny into ask, whatever auto_install says", () => {
+    // The knob only ever lowers what may happen unattended.
+    const p = defaultPolicy();
+    p.trust.autoInstall = true;
+    expect(decide(cand("anthropics", 500000), dirty, p).decision).toBe("deny");
+    p.trust.autoInstall = false;
+    expect(decide(cand("anthropics", 500000), dirty, p).decision).toBe("deny");
+  });
+
+  it("leaves an ask the table already produced exactly as it was", () => {
+    const v = decide(cand("stranger", 10), clean, defaultPolicy());
+    expect(v.decision).toBe("ask");
+    expect(v.reason).not.toMatch(/auto-install is off/);
   });
 });
 
@@ -193,6 +253,16 @@ describe("policy.loadPolicy", () => {
     expect(p.log.retentionDays).toBe(7);
   });
 
+  it("reads trust.auto_install from the yaml", () => {
+    fs.writeFileSync(path.join(home, "metaskill.yaml"), ["version: 1", "trust:", "  auto_install: true"].join("\n"));
+    expect(loadPolicy().trust.autoInstall).toBe(true);
+  });
+
+  it("defaults auto_install off when the yaml is silent about it", () => {
+    fs.writeFileSync(path.join(home, "metaskill.yaml"), ["version: 1", "trust:", "  allowlist: [me]"].join("\n"));
+    expect(loadPolicy().trust.autoInstall).toBe(false);
+  });
+
   it("reads deny_skills from the yaml", () => {
     fs.writeFileSync(
       path.join(home, "metaskill.yaml"),
@@ -236,6 +306,9 @@ describe("policy.loadPolicy", () => {
     const p = loadPolicy();
     expect(p.trust.allowlist).toEqual(["anthropics", "vercel-labs"]);
     expect(p.trust.autoThreshold).toEqual({ minInstalls: 5000, requireCleanScan: true });
+    // The shipped default is the safe one: a fresh install installs nothing
+    // unattended until the user opts in.
+    expect(p.trust.autoInstall).toBe(false);
     expect(p.scan.denyIfContains).toContain("hooks/");
   });
 });

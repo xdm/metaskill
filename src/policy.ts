@@ -12,6 +12,7 @@ export function defaultPolicy(): Policy {
       autoThreshold: { minInstalls: 5000, requireCleanScan: true },
       denySkills: [],
       denyPublishers: [],
+      autoInstall: false,
     },
     scan: {
       denyIfContains: ["hooks/", ".mcp.json", "curl ", "wget ", "eval(", "process.env", "os.environ"],
@@ -45,6 +46,7 @@ export function loadPolicy(): Policy {
     const at = t.auto_threshold ?? {};
     if (typeof at.min_installs === "number") p.trust.autoThreshold.minInstalls = at.min_installs;
     if (typeof at.require_clean_scan === "boolean") p.trust.autoThreshold.requireCleanScan = at.require_clean_scan;
+    if (typeof t.auto_install === "boolean") p.trust.autoInstall = t.auto_install;
 
     const s = y.scan ?? {};
     if (Array.isArray(s.deny_if_contains)) p.scan.denyIfContains = s.deny_if_contains.map(String);
@@ -59,6 +61,25 @@ export function loadPolicy(): Policy {
   return p;
 }
 
+// The public verdict: spec 4.5's table (verdictFor, below) behind the one
+// gate that decides whether an `auto` is allowed to stand.
+export function decide(c: Candidate, scan: ScanResult, p: Policy): PolicyDecision {
+  const verdict = verdictFor(c, scan, p);
+  // The single gate over every `auto` the table can produce. Until the
+  // discovery path is proven in real use, nothing installs without the user's
+  // explicit yes. The verdict above is still computed in full, so flipping
+  // `trust.auto_install` on restores the designed behaviour with no other
+  // change — and a branch added to verdictFor() later cannot slip past this,
+  // because there is exactly one way out of it.
+  //
+  // `deny` is untouched on purpose: this knob lowers what may happen
+  // unattended, it never raises anything.
+  if (verdict.decision === "auto" && !p.trust.autoInstall) {
+    return { decision: "ask", reason: `auto-install is off; ${verdict.reason}` };
+  }
+  return verdict;
+}
+
 // Spec 4.5 decision table, in order: deny_skills / deny_publishers -> deny;
 // dirty scan -> deny; estimated installs -> ask; scan advisories -> ask;
 // allowlisted publisher WITH a clean scan -> auto; installs >= min_installs
@@ -66,7 +87,10 @@ export function loadPolicy(): Policy {
 // estimated-installs check both outrank the allowlist: a trusted publisher's
 // repo can still be compromised or contain a skill nobody has actually
 // installed.
-export function decide(c: Candidate, scan: ScanResult, p: Policy): PolicyDecision {
+//
+// Not exported, and every caller reaches it through decide(): a new `auto`
+// branch here is gated by construction, which is the whole point of the split.
+function verdictFor(c: Candidate, scan: ScanResult, p: Policy): PolicyDecision {
   if (p.trust.denySkills.includes(c.pkg)) {
     return { decision: "deny", reason: `${c.pkg} is in deny_skills` };
   }

@@ -1,11 +1,12 @@
 version: 1
 trust:
-  allowlist:         # auto-install and auto-update
+  allowlist:         # waives the install threshold; also gates auto-update
     - anthropics
     - vercel-labs
   auto_threshold:
     min_installs: 5000
     require_clean_scan: true
+  auto_install: false   # true lets a trusted, clean match install without asking
   deny_skills: []    # block one skill from an otherwise trusted publisher
   deny_publishers: []
 

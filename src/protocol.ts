@@ -21,10 +21,12 @@ import { metaskillCmd } from "./paths.js";
 //     contact — and answering an objection the reader did not raise plants it.
 //   - Every quoted label is a string find.ts actually prints; test/protocol
 //     .test.ts cross-checks them against that file.
-//   - It says find INSTALLS. Default policy auto-installs an allowlisted
-//     publisher, or 5000+ installs with a clean scan, with nobody asked — a
-//     model told only "run:" has no basis to warn the user first, and the
-//     ask-on-yes rule below is true of one branch, not of the command.
+//   - It says find does NOT install, and names the one setting that changes
+//     that. The command used to install the top-ranked hit unattended, and
+//     this block used to warn about it; both are gone. Code ranks, the model
+//     picks, `install` enforces policy (spec §4.4) — so the ask-the-user rule
+//     is now true of the command as a whole, and saying so is what stops a
+//     model reporting an install that never happened.
 //   - It says what to name when no capability phrase is obvious ("fix this
 //     failing test" has none), because "I cannot form a query" is the next
 //     shape the escape hatch takes once "I've got this" is closed. It offers
@@ -60,8 +62,8 @@ export function protocolText(): string {
     "Run it even when you are sure no skill is needed — checking that is its job.",
     "Once per task, not once per session; only pure conversation is exempt.",
     "",
-    "Not only a lookup: on a match your policy already trusts it installs that",
-    "skill for you, unasked. Tell the user what it installed.",
+    "It ranks and vets; it never installs. Nothing reaches disk without the",
+    "user's explicit yes — unless they set `trust.auto_install: true`.",
     "",
     "The user's prompt may be in any language; the query is always English,",
     "derived from the task rather than translated. Name the artefact or domain,",
@@ -69,11 +71,12 @@ export function protocolText(): string {
     "documented craft like SEO or copywriting.",
     "",
     "Act on what it prints:",
-    "- `Installed now:` / `Already present:` — read that SKILL.md and follow it.",
-    "- `Top matches` / `live search found` — ask the user ONE question naming the",
-    "  package, its install count and its publisher, then install only on an",
-    "  explicit yes, with the command that line prints.",
-    "- `Install timed out` / `failed` — tell the user; never retry silently.",
+    "- `Already present:` — read that SKILL.md and follow it.",
+    "- `Top matches` / `live search found` — judge which row, if any, fits the",
+    "  task. Then ask the user ONE question naming the package, its install",
+    "  count and its publisher, and install only on an explicit yes, with the",
+    "  command that line prints.",
+    "- `Refused by policy` — no flag installs these. Never offer them.",
     "- `Registry did not answer` — not a miss. Retry once, or solve it.",
     "- `No skills found` — solve the task yourself, and say nothing about metaskill.",
   ].join("\n");

@@ -34,6 +34,11 @@ export interface Policy {
     autoThreshold: { minInstalls: number; requireCleanScan: boolean };
     denySkills: string[];
     denyPublishers: string[];
+    // The master switch over every `auto` verdict. Off by default: until the
+    // discovery path is proven in real use, nothing reaches disk without the
+    // user's explicit yes. `decide()` still computes the full verdict, so
+    // turning this on restores the designed behaviour with no other change.
+    autoInstall: boolean;
   };
   scan: {
     denyIfContains: string[];

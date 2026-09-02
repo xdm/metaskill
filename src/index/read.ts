@@ -13,36 +13,19 @@ export interface Hit {
   // so the same phrase scores ~0.4 against a 1-record index and ~10 against
   // the 4,831-skill snapshot, and higher again against the 43,714-skill index
   // `sync` downloads. This ratio is stable across all three, which is what
-  // lets MIN_RELEVANCE below be a fixed number rather than a function of
-  // whichever index the user happens to have. It is not bounded by 1: BM25's
-  // term-frequency factor saturates at K1+1, so a document that repeats every
-  // query term lands above it.
+  // makes it worth printing: `find` shows it per row so the model comparing
+  // rows reads the same number whichever index the user happens to have. It
+  // is not bounded by 1: BM25's term-frequency factor saturates at K1+1, so a
+  // document that repeats every query term lands above it.
+  //
+  // It is a signal, never a gate. A fixed floor was tried and removed: the
+  // junk and capability distributions measured against the shipped snapshot
+  // OVERLAP (junk max 1.298, capability min 0.850), so no threshold separates
+  // them, and any floor high enough to reject junk silenced almost every real
+  // query. Judging relevance is the model's job; reporting it is this
+  // number's.
   relevance: number;
 }
-
-// Relevance floor for acting on a hit. MEASURED against the shipped snapshot
-// (4,831 skills, built 2026-09-02) over 30 junk phrases a model might hand
-// `find` on a conversational turn ("say hello", "tell me a joke", "weather in
-// paris") and 25 real capability phrases ("database migration", "xlsx export
-// formulas", "playwright testing"):
-//
-//   junk:       min 0.347  p25 0.474  median 0.700  p75 0.822  max 1.298
-//   capability: min 0.850  p25 1.024  median 1.283  p75 1.494  max 1.815
-//
-// The two distributions OVERLAP between 0.850 and 1.298 — no floor separates
-// them cleanly, and any value high enough to reject every junk phrase (>1.30)
-// would silence 24 of the 25 capability phrases. 0.80 is the highest value
-// that still keeps all 25 capability phrases (the weakest, "postgres tuning",
-// sits at 0.850) while rejecting 24 of the 30 junk phrases outright. The six
-// junk phrases that survive it reach an ask-block, not an install: combined
-// with "only the top-ranked hit may auto-install" in find.ts, unattended junk
-// installs fall from 28/30 measured before this change to 4/30.
-//
-// Raw-score floors were measured too and are strictly worse: at the highest
-// raw floor that keeps all 25 capability phrases (score >= 9) 13 of the 30
-// junk phrases still auto-install, and the value would have to be re-derived
-// for every index size. Do not "simplify" this back to a raw score.
-export const MIN_RELEVANCE = 0.8;
 
 // Single characters carry no signal and blow up the term dictionary; version
 // fragments ("1", "2") would otherwise dominate rare-term scoring.

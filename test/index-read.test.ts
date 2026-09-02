@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { MIN_RELEVANCE, findByPkg, loadIndex, search, tokenize } from "../src/index/read.js";
+import { findByPkg, loadIndex, search, tokenize } from "../src/index/read.js";
 import { INDEX_SCHEMA_VERSION, type IndexFile } from "../src/index/types.js";
 
 const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures/index-sample.json");
@@ -70,11 +70,12 @@ describe("search", () => {
   });
 });
 
-describe("search: the relevance floor", () => {
-  // Corpus-independence is the whole reason `relevance` exists: BM25's raw
-  // score grows with log(N), so a floor set against the 4,831-skill snapshot
-  // would silence every hit in a 2-record test index and let junk through
-  // against the 43,714-skill index `sync` downloads.
+// `relevance` survived the floor that used to consume it: find.ts prints it
+// per row so the model can weigh rows against each other, and it has to mean
+// the same thing whatever index is loaded. The three deleted tests here
+// asserted a fixed 0.8 threshold — a value the measured junk/capability
+// distributions overlap straight through — and went with it.
+describe("search: relevance as a comparable signal", () => {
   const tiny: IndexFile = {
     schemaVersion: 1, builtAt: "2026-09-02T00:00:00.000Z", skillCount: 1, repoCount: 1,
     skills: [{ name: "gizmo", source: "o/r", pkg: "o/r@gizmo", description: "Gizmo automation toolkit.",
@@ -82,30 +83,35 @@ describe("search: the relevance floor", () => {
                scan: "clean", scanFindings: [], scanAdvisories: [] }],
   };
 
-  it("scores a full match above the floor in a 1-record index and in the 350-record fixture", () => {
-    expect(search(tiny, "gizmo automation", 1)[0]!.relevance).toBeGreaterThanOrEqual(MIN_RELEVANCE);
-    expect(search(index, "prisma postgres", 1)[0]!.relevance).toBeGreaterThanOrEqual(MIN_RELEVANCE);
+  it("scores a full match near the same value in a 1-record index and in the 350-record fixture", () => {
+    // Corpus-independence is the whole reason `relevance` exists: raw BM25
+    // grows with log(N), so the same phrase scores ~0.4 against one record
+    // and ~10 against thousands. A printed number that moved with index size
+    // would tell the reader nothing.
+    const a = search(tiny, "gizmo automation", 1)[0]!.relevance;
+    const b = search(index, "prisma postgres", 1)[0]!.relevance;
+    expect(a).toBeGreaterThan(0.8);
+    expect(b).toBeGreaterThan(0.8);
   });
 
-  it("keeps a partial match below the floor even when it is the best row available", () => {
+  it("ranks a half-matched multi-term query well below a full match", () => {
+    // "gizmo" matches, "kubernetes" and "elasticsearch" cannot. The number
+    // has to fall for that, or it carries no information for the model.
+    const full = search(tiny, "gizmo automation", 1)[0]!.relevance;
+    const half = search(tiny, "gizmo kubernetes elasticsearch", 1)[0]!.relevance;
+    expect(half).toBeLessThan(full / 2);
+  });
+
+  it("keeps a partial match visibly weaker than a full one in the real fixture", () => {
     // No document in the fixture covers both terms of "database migration",
-    // so its top hit (prisma-database-setup, which is about setup) sits at
-    // ~0.52. find prints `No skills found` rather than offering the nearest
-    // thing it could rank — the behaviour that stops "say hello" installing
-    // whatever happens to mention "hello".
-    expect(search(index, "database migration", 1)[0]!.relevance).toBeLessThan(MIN_RELEVANCE);
-  });
-
-  it("puts a hit that matched one term of a multi-term query below the floor", () => {
-    // "gizmo" matches, "kubernetes" cannot — half a query is not a match.
-    const h = search(tiny, "gizmo kubernetes elasticsearch", 1)[0]!;
-    expect(h.relevance).toBeLessThan(MIN_RELEVANCE);
+    // so its best row is about setup, not migration. find still prints it —
+    // with this number beside it, which is what the model judges on.
+    expect(search(index, "database migration", 1)[0]!.relevance).toBeLessThan(0.8);
   });
 
   it("orders by relevance exactly as it orders by score", () => {
     // relevance divides every score for a query by the same constant, so the
-    // top hit by score is always the top hit by relevance. find.ts checks
-    // only hits[0].
+    // printed column never contradicts the printed order.
     const hits = search(index, "react component testing", 5);
     const byRel = [...hits].sort((a, b) => b.relevance - a.relevance);
     expect(byRel.map((h) => h.record.pkg)).toEqual(hits.map((h) => h.record.pkg));

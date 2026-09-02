@@ -57,17 +57,16 @@ describe("protocolText", () => {
 
   it("quotes only labels that find.ts actually prints", () => {
     const t = protocolText();
-    // find.ts prints `Top matches for "<query>"`. The other three labels match
+    // find.ts prints `Top matches for "<query>"`. The other labels match
     // find's output exactly, so a model has no cue that this one is
     // approximate — and it is the branch where ask-the-user-first is the whole
     // safety property.
     expect(t).not.toContain("Top matches:");
     for (const label of [
-      "Installed now:",
       "Already present:",
       "Top matches",
       "live search found",
-      "timed out",
+      "Refused by policy",
       "No skills found",
       // A timed-out live lookup and a registry that answered "nothing" are
       // different facts. One label for both would have the model report a
@@ -77,6 +76,19 @@ describe("protocolText", () => {
       expect(t, `protocol names "${label}"`).toContain(label);
       expect(FIND_SRC, `find.ts prints "${label}"`).toContain(label);
     }
+  });
+
+  it("names no outcome find can no longer reach", () => {
+    // `find` installs nothing now, so it can print neither an install
+    // confirmation nor an install failure. A protocol still promising
+    // `Installed now:` teaches the model to wait for a line that will never
+    // come — and, worse, to report an install that never happened.
+    const t = protocolText();
+    for (const gone of ["Installed now:", "Install timed out", "Install failed"]) {
+      expect(t, `protocol must not name "${gone}"`).not.toContain(gone);
+      expect(FIND_SRC, `find.ts must not print "${gone}"`).not.toContain(gone);
+    }
+    expect(FIND_SRC, "find.ts must not install").not.toContain("installSkill");
   });
 
   it("makes no cost or privacy claim the tool cannot keep", () => {
@@ -90,15 +102,16 @@ describe("protocolText", () => {
     expect(t).not.toMatch(/never sends/i);
   });
 
-  it("warns that find installs, rather than reading as a lookup", () => {
-    // Default policy auto-installs an allowlisted publisher, or 5000+ installs
-    // with a clean scan, without asking anyone. A model told only "run:" has
-    // no basis to warn the user first — and the ask-on-an-explicit-yes rule is
-    // true of the `Top matches` branch, not of the command as a whole.
+  it("says find never installs, and names the one setting that changes it", () => {
+    // The inverse of what this test asserted while `find` installed the
+    // top-ranked hit unattended. A model that still believes the command
+    // installs will report an install that never happened, and skip the
+    // question that is now the only way anything lands on disk.
     const t = flat();
-    expect(t).toMatch(/not only a lookup/i);
-    expect(t).toMatch(/installs that skill for you/i);
-    expect(t).toMatch(/tell the user what it installed/i);
+    expect(t).toMatch(/never installs/i);
+    expect(t).toMatch(/explicit yes/i);
+    expect(t).toMatch(/trust\.auto_install: true/);
+    expect(t).not.toMatch(/installs that skill for you/i);
   });
 
   it("says what to name when no capability phrase is obvious, without gating on it", () => {
@@ -149,39 +162,42 @@ describe("skills/metaskill/SKILL.md", () => {
 
   it("quotes only labels that find.ts actually prints", () => {
     for (const label of [
-      "Installed now:",
       "Already present:",
       "Top matches for",
       "live search found",
       "Refused by policy",
       "Registry did not answer",
       "No skills found",
-      // find composes this one: `Install ${timedOut ? "timed out" : "failed"}`.
-      "timed out",
     ]) {
       expect(SKILL_MD, `SKILL.md names "${label}"`).toContain(label);
       expect(FIND_SRC, `find.ts prints "${label}"`).toContain(label);
     }
   });
 
+  it("names no outcome find can no longer reach", () => {
+    for (const gone of ["Installed now:", "Install timed out", "Install failed"]) {
+      expect(SKILL_MD, `SKILL.md must not name "${gone}"`).not.toContain(gone);
+    }
+  });
+
   it("covers every branch the protocol block covers", () => {
     // Anything the block tells the model to act on, the reference must too —
     // otherwise the two disagree about what the tool can print.
-    for (const label of ["Installed now:", "Already present:", "Top matches", "live search found",
+    for (const label of ["Already present:", "Top matches", "live search found", "Refused by policy",
                          "Registry did not answer", "No skills found"]) {
       expect(protocolText(), `protocol names "${label}"`).toContain(label);
       expect(SKILL_MD, `SKILL.md names "${label}"`).toContain(label);
     }
   });
 
-  it("says that find installs unattended, not that it merely looks things up", () => {
-    // Default policy auto-installs an allowlisted publisher with a clean scan,
-    // or 5000+ installs with a clean scan, with nobody asked. A model that
-    // read only the "ask the user first" rule has no basis to warn them.
-    expect(flatMd).toMatch(/not only a lookup/i);
-    expect(flatMd).toMatch(/installs that skill for you/i);
-    expect(flatMd).toMatch(/unattended|unasked/i);
-    expect(flatMd).toMatch(/tell the user what it installed/i);
+  it("says that find never installs, and names the opt-in that changes that", () => {
+    // The reference and the block have to agree about who installs. A
+    // SKILL.md still describing an unattended install is a model reporting one
+    // that never happened.
+    expect(flatMd).toMatch(/never installs/i);
+    expect(flatMd).toMatch(/explicit yes/i);
+    expect(flatMd).toMatch(/trust\.auto_install/);
+    expect(flatMd).not.toMatch(/installs that skill for you/i);
   });
 
   it("tells the model that a timed-out lookup is not a coverage gap", () => {

@@ -235,7 +235,14 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  it("local hit -> auto decision -> install succeeds, names the installed package", async () => {
+  it("find never installs, even for a trusted clean top hit", async () => {
+    // The defect this replaces: the top-ranked BM25 hit installed itself,
+    // globally, with nobody asked — on junk queries too, because BM25 reports
+    // how much of a query a row matched and cannot judge whether the row
+    // answers the task. Code ranks, the model picks, `install` enforces
+    // policy (spec §4.4). This row is the most trusted case there is —
+    // allowlisted publisher, clean scan, 999999 installs — and it still only
+    // gets printed.
     const home = freshHome("find-auto");
     const idx = writeIndex(home, [
       {
@@ -246,40 +253,95 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     ]);
     const r = await runCli(["find", "gizmo automation", "--index", idx], { home });
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain("Installed now: anthropics/skills@gizmo");
-    expect(r.stdout).toContain("Read that SKILL.md and follow it.");
-    expect(fs.existsSync(path.join(home, ".claude", "skills", "gizmo", "SKILL.md"))).toBe(true);
-    // The lock's `domain` is the query phrase that found it — find.ts's own
-    // record of what matched, which `metaskill list` later shows under
-    // MATCHED. Nothing downstream reads it back to make a decision.
-    expect(readLockFile(home)["anthropics/skills@gizmo"]).toMatchObject({
-      skill: "gizmo",
-      version: "1.2.3",
-      domain: "gizmo automation",
-    });
-    const listed = await runCli(["list"], { home });
-    expect(listed.stdout).toMatch(/SKILL\s+PACKAGE\s+VERSION\s+MATCHED\s+INSTALLED\s+STATUS/);
-    expect(listed.stdout).toContain("gizmo automation");
+    expect(r.stdout).toContain('Top matches for "gizmo automation"');
+    expect(r.stdout).toContain("anthropics/skills@gizmo (999999 installs, scan=clean, relevance=");
+    // The verdict is still computed and still shown — the knob downgrades it
+    // to a question, it does not hide why the package would have qualified.
+    expect(r.stdout).toContain("[ask: auto-install is off; publisher anthropics is allowlisted, scan clean]");
+    expect(r.stdout).toContain(
+      `Install only on the user's explicit yes: "${process.execPath}" "${CLI}" install <pkg> --force`,
+    );
+    expect(r.stdout).not.toContain("Installed now:");
+    // Nothing ran, nothing was recorded, nothing landed on disk.
+    expect(stubCalls(home).filter((c) => c[0] === "add")).toEqual([]);
+    expect(readLockFile(home)).toEqual({});
+    expect(fs.existsSync(path.join(home, ".claude", "skills", "gizmo"))).toBe(false);
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  it("install failure never claims success — prints the ask-and-retry line", async () => {
-    const home = freshHome("find-failinstall");
+  it("find prints the same block with auto_install on — installing is install's job", async () => {
+    // The knob restores the `auto` VERDICT, not an install from `find`. Two
+    // separate properties, and conflating them is how the original defect got
+    // in: a decision the policy is willing to make is not the same thing as a
+    // command that acts on it unattended.
+    const home = freshHome("find-auto-on");
+    fs.mkdirSync(path.join(home, ".metaskill"), { recursive: true });
+    fs.writeFileSync(
+      path.join(home, ".metaskill", "metaskill.yaml"),
+      ["version: 1", "trust:", "  auto_install: true"].join("\n"),
+    );
     const idx = writeIndex(home, [
       {
-        name: "thingamajig", source: "anthropics/skills", pkg: "anthropics/skills@thingamajig",
-        description: "Thingamajig helper for thingamajig tasks.", installs: 999999, installsPrior: null,
+        name: "gizmo", source: "anthropics/skills", pkg: "anthropics/skills@gizmo",
+        description: "Gizmo automation toolkit for gizmo workflows.", installs: 999999, installsPrior: null,
         estimated: false, atRepoRoot: false, scan: "clean", scanFindings: [], scanAdvisories: [],
       },
     ]);
-    const r = await runCli(["find", "thingamajig", "--index", idx], { home, env: { STUB_ADD_FAIL: "1" } });
+    const r = await runCli(["find", "gizmo automation", "--index", idx], { home });
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain(
-      `Install failed — ask the user, then run: "${process.execPath}" "${CLI}" install anthropics/skills@thingamajig --force`,
-    );
+    expect(r.stdout).toContain('Top matches for "gizmo automation"');
+    expect(r.stdout).toContain("[auto: publisher anthropics is allowlisted, scan clean]");
+    expect(r.stdout).not.toContain("auto-install is off");
     expect(r.stdout).not.toContain("Installed now:");
-    expect(readLockFile(home)["anthropics/skills@thingamajig"]).toBeUndefined();
+    expect(stubCalls(home).filter((c) => c[0] === "add")).toEqual([]);
+    expect(readLockFile(home)).toEqual({});
+    expect(fs.existsSync(path.join(home, ".claude", "skills", "gizmo"))).toBe(false);
     fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("install honours the knob: refuses without --force by default, installs with it", async () => {
+    // `--force` after an explicit yes is the whole confirmation mechanism —
+    // there is no second flag. With the knob off, even the most trusted
+    // package needs it; with the knob on, the trusted package installs the
+    // way it always did.
+    const home = freshHome("install-knob");
+    fs.mkdirSync(path.join(home, ".metaskill"), { recursive: true });
+    fs.writeFileSync(
+      path.join(home, ".metaskill", "index.json"),
+      JSON.stringify(indexFile([rec({ name: "gizmo", source: "anthropics/skills", pkg: "anthropics/skills@gizmo",
+                                      description: "Gizmo automation toolkit.", installs: 999999 })])),
+    );
+
+    const refused = await runCli(["install", "anthropics/skills@gizmo"], { home });
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain("Needs confirmation (auto-install is off;");
+    expect(refused.stderr).toContain("publisher anthropics is allowlisted, scan clean");
+    expect(stubCalls(home).filter((c) => c[0] === "add")).toEqual([]);
+    expect(readLockFile(home)).toEqual({});
+
+    const forced = await runCli(["install", "anthropics/skills@gizmo", "--force"], { home });
+    expect(forced.code).toBe(0);
+    expect(forced.stdout).toContain("Installed anthropics/skills@gizmo");
+    expect(readLockFile(home)["anthropics/skills@gizmo"]).toMatchObject({ skill: "gizmo", version: "1.2.3" });
+
+    // ...and with the knob on, the same package needs no flag at all.
+    const home2 = freshHome("install-knob-on");
+    fs.mkdirSync(path.join(home2, ".metaskill"), { recursive: true });
+    fs.writeFileSync(
+      path.join(home2, ".metaskill", "metaskill.yaml"),
+      ["version: 1", "trust:", "  auto_install: true"].join("\n"),
+    );
+    fs.writeFileSync(
+      path.join(home2, ".metaskill", "index.json"),
+      JSON.stringify(indexFile([rec({ name: "gizmo", source: "anthropics/skills", pkg: "anthropics/skills@gizmo",
+                                      description: "Gizmo automation toolkit.", installs: 999999 })])),
+    );
+    const auto = await runCli(["install", "anthropics/skills@gizmo"], { home: home2 });
+    expect(auto.code).toBe(0);
+    expect(auto.stdout).toContain("Installed anthropics/skills@gizmo");
+
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home2, { recursive: true, force: true });
   });
 
   it("nothing qualifies for auto: ranked ask-block with install counts and decisions", async () => {
@@ -299,10 +361,15 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     const r = await runCli(["find", "snorklex", "--index", idx], { home });
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('Top matches for "snorklex"');
-    expect(r.stdout).toContain("someorg/repo@snorklex (42 installs");
-    expect(r.stdout).toContain("otherorg/tools@snorklex-lite (~12 est installs");
+    expect(r.stdout).toContain("someorg/repo@snorklex (42 installs, scan=clean, relevance=");
+    expect(r.stdout).toContain("otherorg/tools@snorklex-lite (~12 est installs, scan=clean, relevance=");
     expect(r.stdout).toContain("[ask:");
-    expect(r.stdout).toContain(`On an explicit yes run: "${process.execPath}" "${CLI}" install <pkg> --force`);
+    // relevance is printed so the model can judge the match; two decimals, on
+    // every row, whatever the decision.
+    expect(r.stdout).toMatch(/relevance=\d\.\d\d\)/);
+    expect(r.stdout).toContain(
+      `Install only on the user's explicit yes: "${process.execPath}" "${CLI}" install <pkg> --force`,
+    );
     fs.rmSync(home, { recursive: true, force: true });
   });
 
@@ -403,24 +470,27 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     // was empty — hiding the allowlisted, auto-installable candidate.
     expect(r3.stdout).toContain("anthropics/skills@sprocketamatic");
     expect(r3.stdout).not.toContain("sprocketamatic-ghost");
-    expect(readLockFile(home)["anthropics/skills@sprocketamatic"]).toBeTruthy();
+    expect(r3.stdout).toContain("[ask: auto-install is off;");
     fs.rmSync(home, { recursive: true, force: true });
   });
 });
 
-describe("find: only the top-ranked hit installs, and only above the relevance floor", () => {
-  // Before this, `find` took the first row whose DECISION was `auto`,
-  // wherever it ranked, and acted on any BM25 hit at all. Measured against
-  // the shipped snapshot: 29 of 30 junk phrases ("say hello", "weather in
-  // paris") auto-installed a third-party skill unattended, and on 25 real
-  // capability phrases 11 installed something that was not the top match.
+describe("find: ranking is a signal, not an action", () => {
+  // Two mechanisms used to live here and both are gone, because both were
+  // patches on the same wrong shape — `find` deciding what to install.
+  // "Only the top-ranked hit may auto-install" narrowed which junk installed;
+  // the MIN_RELEVANCE floor tried to reject junk queries outright, and could
+  // not: measured against the shipped snapshot the junk and capability
+  // relevance distributions overlap (junk max 1.298, capability min 0.850),
+  // so any floor strict enough to stop "say hello" silenced 24 of 25 real
+  // phrases. Judging relevance is the model's job. `find` reports and stops.
 
-  it("a junk query whose best hit is weak installs nothing and does not even search live", async () => {
-    const home = freshHome("find-floor");
+  it("prints a weak junk match with its relevance instead of installing or hiding it", async () => {
+    const home = freshHome("find-weak");
     const idx = writeIndex(home, [
-      // Allowlisted + clean, so policy would say `auto` the moment anything
-      // reached it. Only "hello" of the query is in this description, so the
-      // hit is a fragment of a match, not a match.
+      // Allowlisted + clean, so policy would have said `auto` the moment
+      // anything reached it. Only "hello" of the query is in this
+      // description, so the hit is a fragment of a match, not a match.
       rec({ name: "cardputer-buddy", source: "anthropics/plugins", pkg: "anthropics/plugins@cardputer-buddy",
             description: "Say hello to your handheld device companion.", installs: 900 }),
       rec({ name: "widget-press", source: "acme/tools", pkg: "acme/tools@widget-press",
@@ -428,17 +498,24 @@ describe("find: only the top-ranked hit installs, and only above the relevance f
     ]);
     const r = await runCli(["find", "say hello zorbulon", "--index", idx], { home });
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain('No skills found for "say hello zorbulon"');
+    // The row is shown, with the number that says how weak it is — the model
+    // reads that and declines. Nothing is installed either way.
+    expect(r.stdout).toContain("anthropics/plugins@cardputer-buddy");
+    const rel = /relevance=(\d\.\d\d)\)/.exec(r.stdout);
+    expect(rel).not.toBeNull();
+    expect(Number(rel![1])).toBeLessThan(0.8);
+    expect(r.stdout).toContain("find does not install");
     expect(r.stdout).not.toContain("Installed now:");
-    expect(r.stdout).not.toContain("Top matches");
-    // A weak local hit is not a reason to go to the network either: the live
-    // fallback exists for a query the index has never heard of.
+    // A local hit, however weak, is still a hit: no live search runs.
     expect(stubCalls(home)).toEqual([]);
     expect(readLockFile(home)).toEqual({});
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  it("a second-ranked auto row never installs when the top-ranked row is ask", async () => {
+  it("shows a lower-ranked trusted row without acting on it", async () => {
+    // The measured failure: on 25 real capability phrases, 11 installed a row
+    // that was not the top match, purely because policy happened to bless it.
+    // Both rows are offered now, in rank order, and neither is installed.
     const home = freshHome("find-rank");
     const idx = writeIndex(home, [
       // Ranks first (it repeats both query terms), but 42 installs from an
@@ -454,53 +531,21 @@ describe("find: only the top-ranked hit installs, and only above the relevance f
     expect(r.code).toBe(0);
     expect(r.stdout).not.toContain("Installed now:");
     expect(r.stdout).toContain('Top matches for "zorptastic widget"');
-    // Both rows are still offered — the model asks the user, which is the
-    // deliberate step the spec calls for (§4.4).
-    expect(r.stdout).toContain("someorg/repo@zorptastic-pro");
-    expect(r.stdout).toContain("anthropics/skills@zorptastic");
+    const first = r.stdout.indexOf("someorg/repo@zorptastic-pro");
+    const second = r.stdout.indexOf("anthropics/skills@zorptastic ");
+    expect(first).toBeGreaterThanOrEqual(0);
+    expect(second).toBeGreaterThan(first); // rank order preserved
+    expect(r.stdout).toContain("[ask: publisher someorg not allowlisted]");
+    expect(r.stdout).toContain("[ask: auto-install is off; publisher anthropics is allowlisted, scan clean]");
     expect(stubCalls(home).filter((c) => c[0] === "add")).toEqual([]);
     expect(readLockFile(home)).toEqual({});
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  it("the top-ranked row still installs when it is the one policy trusts", async () => {
-    const home = freshHome("find-rank-ok");
-    const idx = writeIndex(home, [
-      rec({ name: "zorptastic", source: "anthropics/skills", pkg: "anthropics/skills@zorptastic",
-            description: "Zorptastic widget helper: zorptastic widget pipelines and zorptastic widget builds.",
-            installs: 999999 }),
-      rec({ name: "zorptastic-lite", source: "someorg/repo", pkg: "someorg/repo@zorptastic-lite",
-            description: "A lighter zorptastic widget helper.", installs: 42 }),
-    ]);
-    const r = await runCli(["find", "zorptastic widget", "--index", idx], { home });
-    expect(r.stdout).toContain("Installed now: anthropics/skills@zorptastic");
-    fs.rmSync(home, { recursive: true, force: true });
-  });
-
-  it("gives the unattended install the same 120s the manual path gets, not the 20s default", async () => {
-    // Measured at 20.17s ending in a timeout on exactly this path — the one
-    // nobody is watching. installSkill's own default (or the env override
-    // standing in for it here) must not be what governs it: with the caller
-    // passing 120s, a deliberately tiny METASKILL_INSTALL_TIMEOUT_MS cannot
-    // reach the call, and an install that takes longer than it still lands.
-    const home = freshHome("find-timeout");
-    const idx = writeIndex(home, [
-      rec({ name: "slowpoke", source: "anthropics/skills", pkg: "anthropics/skills@slowpoke",
-            description: "Slowpoke automation toolkit for slowpoke automation workflows.", installs: 999999 }),
-    ]);
-    const r = await runCli(["find", "slowpoke automation", "--index", idx], {
-      home,
-      env: { METASKILL_INSTALL_TIMEOUT_MS: "1", STUB_ADD_SLEEP_MS: "250" },
-    });
-    expect(r.stdout).toContain("Installed now: anthropics/skills@slowpoke");
-    expect(r.stdout).not.toContain("timed out");
-    fs.rmSync(home, { recursive: true, force: true });
-  });
-
   it("never lists a denied package under the ask header or beside an install command", async () => {
-    // `deny` rows printed under "ask the user ONE question before installing
-    // any", above a line reading `install <pkg> --force`, invite the model to
-    // go get approval for something no flag can install.
+    // `deny` rows printed under "ask the user ONE question", above a line
+    // reading `install <pkg> --force`, invite the model to go get approval
+    // for something no flag can install.
     const home = freshHome("find-deny");
     const idx = writeIndex(home, [
       rec({ name: "flumbex", source: "anthropics/skills", pkg: "anthropics/skills@flumbex",
@@ -534,6 +579,49 @@ describe("find: only the top-ranked hit installs, and only above the relevance f
     expect(r.stdout).not.toContain("ask the user ONE question");
     expect(r.stdout).not.toContain("install <pkg> --force");
     fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("--force still cannot install a package the index scans dirty, knob on or off", async () => {
+    // deny is deny. The knob lowers what may happen unattended; it has no
+    // power over the tier above it, and neither does the flag.
+    const home = freshHome("find-deny-force");
+    fs.mkdirSync(path.join(home, ".metaskill"), { recursive: true });
+    fs.writeFileSync(
+      path.join(home, ".metaskill", "metaskill.yaml"),
+      ["version: 1", "trust:", "  auto_install: true"].join("\n"),
+    );
+    fs.writeFileSync(
+      path.join(home, ".metaskill", "index.json"),
+      JSON.stringify(indexFile([rec({ name: "flumbex", source: "anthropics/skills",
+                                      pkg: "anthropics/skills@flumbex", description: "Flumbex processor.",
+                                      installs: 999999, scan: "dirty",
+                                      scanFindings: ["os.environ in script.py"] })])),
+    );
+    const forced = await runCli(["install", "anthropics/skills@flumbex", "--force"], { home });
+    expect(forced.code).toBe(1);
+    expect(forced.stderr).toContain("DENIED:");
+    expect(forced.stderr).toContain("`deny` cannot be bypassed by any flag.");
+
+    // Same for a publisher-level deny, with the knob at its default.
+    const home2 = freshHome("find-deny-list");
+    fs.mkdirSync(path.join(home2, ".metaskill"), { recursive: true });
+    fs.writeFileSync(
+      path.join(home2, ".metaskill", "metaskill.yaml"),
+      ["version: 1", "trust:", "  deny_skills: [anthropics/skills@gizmo]"].join("\n"),
+    );
+    fs.writeFileSync(
+      path.join(home2, ".metaskill", "index.json"),
+      JSON.stringify(indexFile([rec({ name: "gizmo", source: "anthropics/skills",
+                                      pkg: "anthropics/skills@gizmo", description: "Gizmo toolkit.",
+                                      installs: 999999 })])),
+    );
+    const denied2 = await runCli(["install", "anthropics/skills@gizmo", "--force"], { home: home2 });
+    expect(denied2.code).toBe(1);
+    expect(denied2.stderr).toContain("is in deny_skills");
+    expect(stubCalls(home2).filter((c) => c[0] === "add")).toEqual([]);
+
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(home2, { recursive: true, force: true });
   });
 });
 
@@ -571,22 +659,38 @@ describe("find: reinstall protection matches a name, never a word inside one", (
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  it("short-circuits a repeat of the exact phrase that installed a skill, via the lock", async () => {
+  it("short-circuits a repeat of the phrase a lock entry records, via the lock", async () => {
+    // `find` no longer installs, so nothing writes LockEntry.domain today —
+    // but locks written by earlier versions carry it, and the shortcut those
+    // users earned must keep working. Seeded here the way `list`'s
+    // old-lock-entry test seeds one, rather than by having find install.
     const home = freshHome("find-present-lock");
+    installSkillOnDisk(home, "sheetwrangler");
+    fs.mkdirSync(path.join(home, ".metaskill"), { recursive: true });
+    fs.writeFileSync(
+      path.join(home, ".metaskill", "skills-lock.json"),
+      JSON.stringify({
+        "anthropics/skills@sheetwrangler": {
+          pkg: "anthropics/skills@sheetwrangler",
+          skill: "sheetwrangler",
+          installedAt: "2026-08-01T00:00:00Z",
+          version: "1.2.3",
+          domain: "excel spreadsheets",
+        },
+      }),
+    );
     const idx = writeIndex(home, [
       rec({ name: "sheetwrangler", source: "anthropics/skills", pkg: "anthropics/skills@sheetwrangler",
             description: "Excel spreadsheets toolkit: excel spreadsheets formulas and excel spreadsheets charts.",
             installs: 999999 }),
     ]);
-    const first = await runCli(["find", "excel spreadsheets", "--index", idx], { home });
-    expect(first.stdout).toContain("Installed now: anthropics/skills@sheetwrangler");
-    expect(readLockFile(home)["anthropics/skills@sheetwrangler"]).toMatchObject({ domain: "excel spreadsheets" });
-
     // The skill is named nothing like the query, so only the lock can answer
-    // this — and it must, rather than installing the same package twice.
-    const again = await runCli(["find", "excel spreadsheets", "--index", idx], { home });
-    expect(again.stdout).toContain("Already present: sheetwrangler");
-    expect(stubCalls(home).filter((c) => c[0] === "add")).toHaveLength(1);
+    // this — and it must, rather than sending the model back to the index for
+    // a package it already has.
+    const r = await runCli(["find", "excel spreadsheets", "--index", idx], { home });
+    expect(r.stdout).toContain("Already present: sheetwrangler");
+    expect(r.stdout).not.toContain("Top matches");
+    expect(stubCalls(home)).toEqual([]);
     fs.rmSync(home, { recursive: true, force: true });
   });
 });
@@ -989,7 +1093,11 @@ describe("manual install reads the index verdict, for every publisher (spec §7 
       rec({ name: "xlsx", source: "anthropics/skills", pkg: "anthropics/skills@xlsx",
             description: "Excel workbooks.", installs: 158400 }),
     ]);
-    const r = await runCli(["install", "anthropics/skills@xlsx"], { home });
+    // --force because trust.auto_install is off by default: a clean verdict
+    // from an allowlisted publisher is now an `ask`, and the flag is the
+    // user's yes. What this test pins is the absence of a live scan, which is
+    // unaffected by it.
+    const r = await runCli(["install", "anthropics/skills@xlsx", "--force"], { home });
     expect(r.code).toBe(0);
     expect(r.stdout).toContain("Installed anthropics/skills@xlsx");
     expect(r.stdout).not.toContain("Scanning");
@@ -1036,7 +1144,9 @@ describe("list command", () => {
       JSON.stringify(indexFile([rec({ name: "xlsx", source: "anthropics/skills", pkg: "anthropics/skills@xlsx",
                                       description: "Excel workbooks.", installs: 158400 })])),
     );
-    await runCli(["install", "anthropics/skills@xlsx"], { home });
+    // --force stands in for the user's yes: with trust.auto_install off (the
+    // default) nothing installs without one, allowlisted and clean or not.
+    await runCli(["install", "anthropics/skills@xlsx", "--force"], { home });
     const r = await runCli(["list"], { home });
     expect(r.stdout).toMatch(/SKILL\s+PACKAGE\s+VERSION\s+MATCHED\s+INSTALLED\s+STATUS/);
     expect(r.stdout).toContain("anthropics/skills@xlsx");

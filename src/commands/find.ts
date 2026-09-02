@@ -1,8 +1,7 @@
-import { MIN_RELEVANCE, loadIndex, scanResultFromIndex, search } from "../index/read.js";
+import { loadIndex, scanResultFromIndex, search } from "../index/read.js";
 import { metaskillCmd } from "../paths.js";
 import type { IndexRecord } from "../index/types.js";
 import { discoverByQuery, publisherOf } from "../discover.js";
-import { installSkill } from "../install.js";
 import { listInstalledSkills } from "../inventory.js";
 import { readLock } from "../lock.js";
 import { findPlugins, formatPluginLine } from "../plugins.js";
@@ -31,7 +30,10 @@ export function recordToCandidate(r: IndexRecord): Candidate {
 //
 //   (i)  an installed skill whose name IS the query (spaces -> hyphens), or
 //   (ii) the lock recording this exact phrase as the phrase that installed it
-//        (LockEntry.domain, which findCommand writes on every auto-install).
+//        (LockEntry.domain). `find` no longer installs anything, so nothing
+//        writes that field today; it is still read, because locks written by
+//        earlier versions carry it and a user who has one should keep the
+//        short-circuit it earned.
 //
 // Anything else goes to the index. The cost of being wrong in this direction
 // is one extra local lookup; the cost in the other direction was the model
@@ -50,10 +52,16 @@ function alreadyPresent(q: string, installed: InstalledSkill[]): InstalledSkill 
   return matched ? installed.find((s) => s.name === matched.skill) : undefined;
 }
 
-function line(r: IndexRecord, decision: string, reason: string): string {
+// `relevance` is printed because the model, not the code, now picks which row
+// (if any) answers the task. BM25 cannot judge whether "say hello" is really
+// about a greeting skill; it only reports how much of the query the row
+// matched, and 0.00-1.x is the one number that says so comparably across
+// index sizes. A reader who sees every row at 0.4 has been told what a
+// hard-coded floor used to decide for them, and can still see the rows.
+function line(r: IndexRecord, relevance: number, decision: string, reason: string): string {
   const installs = r.installs === null ? `~${r.installsPrior ?? 0} est` : String(r.installs);
   const desc = (r.description ?? "").replace(/\s+/g, " ").slice(0, 140);
-  return `  ${r.pkg} (${installs} installs, scan=${r.scan}) [${decision}: ${reason}]\n    ${desc}`;
+  return `  ${r.pkg} (${installs} installs, scan=${r.scan}, relevance=${relevance.toFixed(2)}) [${decision}: ${reason}]\n    ${desc}`;
 }
 
 // find is invoked directly by the in-session model via Bash, with no human
@@ -70,7 +78,10 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       return 2;
     }
 
-    const logFind = (installed: string[], covered: string[]) =>
+    // `installed` is always empty: find ranks, it does not install. The field
+    // stays in the record because `log --stats` and older log lines share the
+    // shape, and `install` may still write a non-empty one.
+    const logFind = (covered: string[]) =>
       appendLog(
         {
           ts: new Date().toISOString(),
@@ -79,7 +90,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
           domains: [`find:${q}`],
           covered,
           discovered: [],
-          installed,
+          installed: [],
           latency_ms: Date.now() - t0,
         },
         policy,
@@ -96,7 +107,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     const present = alreadyPresent(q, listInstalledSkills(process.cwd()));
     if (present) {
       process.stdout.write(`[metaskill] Already present: ${present.name} — use ${present.dir}/SKILL.md\n${pluginLine}`);
-      logFind([], [present.name]);
+      logFind([present.name]);
       return 0;
     }
 
@@ -143,11 +154,11 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
           process.stdout.write(
             `[metaskill] Registry did not answer for "${q}" — this is not a miss. Solve the task without a skill, or run find once more.\n${pluginLine}`,
           );
-          logFind([], []);
+          logFind([]);
           return 0;
         }
         process.stdout.write(`[metaskill] No skills found for "${q}". Solve the task without one.\n${pluginLine}`);
-        logFind([], []);
+        logFind([]);
         return 0;
       }
       const top = [...cands].sort((a, b) => b.installs - a.installs)[0]!;
@@ -155,51 +166,22 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
         `[metaskill] Not in the local index; live search found ${top.pkg} (${top.installs} installs).\n` +
           `Ask the user one question before installing; on an explicit yes run: ${metaskillCmd()} install ${top.pkg} --force\n${pluginLine}`,
       );
-      logFind([], []);
+      logFind([]);
       return 0;
     }
 
-    // Relevance floor. BM25 ranks whatever it is given: before this, EVERY
-    // query got a top hit, so "say hello" auto-installed a third-party skill
-    // (29 of 30 measured junk phrases did). A top hit this weak is not a
-    // worse match, it is not a match — so it is not offered for confirmation
-    // either, and no live search is run on its behalf. See MIN_RELEVANCE.
-    if (hits[0]!.relevance < MIN_RELEVANCE) {
-      process.stdout.write(`[metaskill] No skills found for "${q}". Solve the task without one.\n${pluginLine}`);
-      logFind([], []);
-      return 0;
-    }
-
+    // Code ranks; the model picks; `install` enforces policy (spec §4.4).
+    // This used to end in "the top-ranked BM25 hit installs itself", which is
+    // the step that produced unattended installs on junk queries — BM25 can
+    // report how much of a query a row matched, it cannot judge whether the
+    // row answers the task, and the one reader that can was cut out of the
+    // loop. So `find` prints and stops. Nothing here installs, whatever the
+    // decision column says; `trust.auto_install: true` re-arms the automatic
+    // path, and even then it is `install` that acts on it, never this command.
     const rows = hits.map((h) => {
       const v = decide(recordToCandidate(h.record), scanResultFromIndex(h.record), policy);
-      return { r: h.record, v };
+      return { r: h.record, rel: h.relevance, v };
     });
-
-    // ONLY the top-ranked hit may install unattended. Taking the first `auto`
-    // ROW instead meant a rank-5 hit installed itself whenever ranks 1-4 were
-    // `ask` — measured on 25 real capability phrases, 11 installed something
-    // that was not the top match. Lower-ranked rows still appear below, where
-    // a human decides.
-    const auto = rows[0]!.v.decision === "auto" ? rows[0]! : undefined;
-    if (auto) {
-      // The same 120s the manual `install` path uses. The 20s default was
-      // measured timing out at 20.17s on exactly this path — and this is the
-      // one nobody is watching.
-      const res = await installSkill(auto.r.pkg, q, { timeoutMs: 120_000 });
-      if (res.ok) {
-        process.stdout.write(
-          `[metaskill] Installed now: ${auto.r.pkg}${res.version ? ` (v${res.version})` : ""}${res.skillMdPath ? ` -> ${res.skillMdPath}` : ""}\n` +
-            `Read that SKILL.md and follow it.\n${pluginLine}`,
-        );
-        logFind([auto.r.pkg], []);
-        return 0;
-      }
-      process.stdout.write(
-        `[metaskill] Install ${res.timedOut ? "timed out" : "failed"} — ask the user, then run: ${metaskillCmd()} install ${auto.r.pkg} --force\n${pluginLine}`,
-      );
-      logFind([], []);
-      return 0;
-    }
 
     // Denied rows never appear under the ask header. Listed there, above a
     // line reading `install <pkg> --force`, they read as an invitation to go
@@ -210,7 +192,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     const denied = rows.filter((x) => x.v.decision === "deny");
     const deniedBlock = denied.length
       ? `Refused by policy — no flag installs these, do not offer them:\n` +
-        denied.map((x) => line(x.r, x.v.decision, x.v.reason)).join("\n") +
+        denied.map((x) => line(x.r, x.rel, x.v.decision, x.v.reason)).join("\n") +
         "\n"
       : "";
     if (!askable.length) {
@@ -220,15 +202,16 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       process.stdout.write(
         `[metaskill] No skills found for "${q}". Solve the task without one.\n${deniedBlock}${pluginLine}`,
       );
-      logFind([], []);
+      logFind([]);
       return 0;
     }
     process.stdout.write(
-      `[metaskill] Top matches for "${q}" — none auto-installable, ask the user ONE question before installing any:\n` +
-        askable.map((x) => line(x.r, x.v.decision, x.v.reason)).join("\n") +
-        `\nOn an explicit yes run: ${metaskillCmd()} install <pkg> --force\n${deniedBlock}${pluginLine}`,
+      `[metaskill] Top matches for "${q}" — find does not install. Judge whether one of these actually fits the task; ` +
+        `if none does, solve it yourself. Before installing any, ask the user ONE question:\n` +
+        askable.map((x) => line(x.r, x.rel, x.v.decision, x.v.reason)).join("\n") +
+        `\nInstall only on the user's explicit yes: ${metaskillCmd()} install <pkg> --force\n${deniedBlock}${pluginLine}`,
     );
-    logFind([], []);
+    logFind([]);
     return 0;
   } catch (err) {
     process.stderr.write(`[metaskill] find error: ${(err as Error).message}\n`);

@@ -1,6 +1,6 @@
 ---
 name: metaskill
-description: Protocol for handling the [metaskill] block in context. Use in every session where a [metaskill] block appears — it tells you which skills were just installed for the current task, which need user confirmation, and how to install them safely.
+description: Protocol for handling the [metaskill] block in context. Use in every session where a [metaskill] block appears — it tells you how to look up the skills a task needs, what the policy decision on each one means, and how to install one safely once the user has said yes.
 ---
 
 # metaskill protocol
@@ -9,7 +9,7 @@ metaskill injects one `[metaskill]` block into your context, from a
 SessionStart hook: a standing protocol naming a `find` command. That block is
 self-contained — this skill is the longer reference for the same rules, not
 the only place they live. Running `find` prints its own `[metaskill]` line
-naming what it found, installed, or wants confirmation for (see "On `find`"
+naming what it found and what policy thinks of each candidate (see "On `find`"
 below); UserPromptSubmit no longer classifies or prints anything.
 
 ## On "Needs confirmation"
@@ -37,20 +37,28 @@ job. Once per task, not once per session; only pure conversation is exempt.
 The user's prompt may be in any language; the query is always English, and you
 derive it from the task rather than translating the prompt.
 
-`find` is not only a lookup. On a match the trust policy already trusts — an
-allowlisted publisher with a clean scan, or 5000+ installs with a clean scan —
-it installs that skill for you, unasked and unattended, and only then prints.
-Tell the user what it installed. Then act on what it prints:
+`find` ranks and vets; it **never installs**. It prints the top candidates
+with their install count, scan verdict, relevance and policy decision, and
+stops there — the division of labour is that code ranks, you pick, and the
+`install` subcommand enforces the policy on what you picked. Nothing reaches
+disk without the user's explicit yes, unless they have opted in by setting
+`trust.auto_install: true` in `~/.metaskill/metaskill.yaml` (off by default,
+and even then it is `install` that acts, never `find`).
 
-- **`Installed now:` / `Already present:`** — read that SKILL.md and follow it.
-- **`Top matches for ...`** / **`live search found ...`** — nothing qualified
-  for auto-install. Ask the user ONE question naming the package, its install
-  count and its publisher, then install only on an explicit yes, using the
-  command that line prints.
+`relevance` is BM25's report of how much of your query a row matched, on a
+scale that means the same thing whatever index is loaded. It is a signal for
+your judgement, not a verdict: a row can rank first and still have nothing to
+do with the task. If none of them fits, say so and solve the task yourself.
+
+Act on what it prints:
+
+- **`Already present:`** — read that SKILL.md and follow it.
+- **`Top matches for ...`** / **`live search found ...`** — decide which row,
+  if any, actually fits the task. Then ask the user ONE question naming the
+  package, its install count and its publisher, and install only on an
+  explicit yes, using the command that line prints.
 - **`Refused by policy`** — those packages are not installable by any flag.
   Never offer them; do not ask about them.
-- **`Install timed out`** / **`Install failed`** — tell the user; never retry
-  silently.
 - **`Registry did not answer`** — a lookup that never completed, not evidence
   that no skill exists. Run `find` once more, or solve the task without one.
 - **`No skills found`** — solve the task yourself, and say nothing about

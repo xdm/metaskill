@@ -5,8 +5,9 @@
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 ![node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen)
 
-Claude Code decides which skills a task needs, installs them safely, then
-solves the task. You never search for, compare, or install skills manually.
+Claude Code works out which skills a task needs, vets them against your trust
+policy, installs them safely once you say yes, then solves the task. You never
+search for, compare, or hunt down skills manually.
 
 ```bash
 /plugin marketplace add xdm/metaskill
@@ -20,8 +21,8 @@ and uninstall are in [Install](#install) below.
 metaskill runs **inside Claude Code only**, through its hook system
 (`UserPromptSubmit` / `SessionStart`) — both install methods below end up
 there. The skills it installs are readable by other agents too (the `skills`
-CLI links them into Codex, Cursor and others), but the automatic
-"install what this task needs" loop is Claude Code only for now.
+CLI links them into Codex, Cursor and others), but the
+"find what this task needs" loop is Claude Code only for now.
 
 ## Why this exists
 
@@ -42,9 +43,10 @@ improvising.
 metaskill is exactly what the name says, a meta-skill: **the skill of finding
 and managing skills, done for you.** At the start of every task, before
 Claude answers, it checks what's already installed, ranks a local index of
-the registry for the gap, vets the candidate against your trust policy,
-installs what passes, and tells Claude what it now has. You type the task;
-the toolkit assembles itself.
+the registry for the gap, and hands Claude a shortlist with a trust-policy
+verdict on each candidate. Claude picks the one that actually fits and asks
+you before anything is installed. You type the task; the toolkit assembles
+itself, one confirmed install at a time.
 
 ```
 $ claude
@@ -61,32 +63,33 @@ Between pressing Enter and Claude's first token:
    each one past the trust policy:
 
 ```
-[metaskill] Top matches for "xlsx export formulas" — none auto-installable, ask the user ONE question before installing any:
-  aiskillstore/marketplace@xlsx (237 installs, scan=unknown) [ask: publisher aiskillstore not allowlisted]
+[metaskill] Top matches for "xlsx export formulas" — find does not install. Judge whether one of these actually fits the task; if none does, solve it yourself. Before installing any, ask the user ONE question:
+  aiskillstore/marketplace@xlsx (237 installs, scan=unknown, relevance=1.12) [ask: publisher aiskillstore not allowlisted]
     Spreadsheet toolkit (.xlsx/.csv). Create/edit with formulas/formatting, analyze data, visualization, recalculate formulas, for spreadsheet p
-  davila7/claude-code-templates@xlsx (949 installs, scan=clean) [ask: publisher davila7 not allowlisted]
+  davila7/claude-code-templates@xlsx (949 installs, scan=clean, relevance=1.12) [ask: publisher davila7 not allowlisted]
     Spreadsheet toolkit (.xlsx/.csv). Create/edit with formulas/formatting, analyze data, visualization, recalculate formulas, for spreadsheet p
-  aaaaqwq/agi-super-team@xlsx (~0 est installs, scan=clean) [ask: no real install count (0 estimated from siblings)]
+  aaaaqwq/agi-super-team@xlsx (~0 est installs, scan=clean, relevance=0.94) [ask: no real install count (0 estimated from siblings)]
     Comprehensive spreadsheet creation, editing, and analysis with support for formulas, formatting, data analysis, and visualization. When Clau
-  ailabs-393/ai-labs-claude-skills@xlsx (876 installs, scan=clean) [ask: publisher ailabs-393 not allowlisted]
+  ailabs-393/ai-labs-claude-skills@xlsx (876 installs, scan=clean, relevance=0.94) [ask: publisher ailabs-393 not allowlisted]
     Comprehensive spreadsheet creation, editing, and analysis with support for formulas, formatting, data analysis, and visualization. When Clau
-  anthropics/claude-agent-sdk-demos@xlsx (159 installs, scan=clean) [auto: publisher anthropics is allowlisted, scan clean]
+  anthropics/claude-agent-sdk-demos@xlsx (159 installs, scan=clean, relevance=0.94) [ask: auto-install is off; publisher anthropics is allowlisted, scan clean]
     Comprehensive spreadsheet creation, editing, and analysis with support for formulas, formatting, data analysis, and visualization. When Clau
-On an explicit yes run: "/Users/you/.nvm/versions/node/v24.17.0/bin/node" "/Users/you/.metaskill/bin/dist/cli.js" install <pkg> --force
+Install only on the user's explicit yes: "/Users/you/.nvm/versions/node/v24.17.0/bin/node" "/Users/you/.metaskill/bin/dist/cli.js" install <pkg> --force
 ```
 
-4. Nothing there installs itself. **Only the top-ranked hit is ever installed
-   unattended**, and the top-ranked hit here — 237 installs, no scan verdict,
-   publisher not on your allowlist — is not one your policy trusts. The
-   allowlisted, clean `anthropics/claude-agent-sdk-demos@xlsx` further down
-   the list is marked `auto`, and is still not installed on its own: a lower
-   row that ranked below four better matches is not the answer to your task
-   just because policy would permit it.
-5. So Claude asks you one question — naming the package, its publisher and its
-   install count — and installs only on an explicit yes, with the command that
-   line printed. Had the top-ranked hit been one the policy trusts, step 4
-   would have installed it outright and printed `Installed now:` instead, and
-   Claude would have gone straight on to the task.
+4. **`find` installs nothing. It ranks, vets, and stops.** Each row carries
+   its install count, scan verdict, `relevance` (how much of the query the
+   row matched, on a scale that means the same thing whatever index you have
+   loaded) and the policy's verdict. Ranking is not judgement: BM25 can tell
+   you that a row repeats your words, not that it answers your task — so the
+   choice belongs to the reader who understands the task, and Claude makes it
+   here. The last row is allowlisted with a clean scan, and reads
+   `auto-install is off` because that is the shipped default: the verdict is
+   computed in full, then held for your yes.
+5. So Claude picks the row that fits, asks you one question — naming the
+   package, its publisher and its install count — and installs only on an
+   explicit yes, with the command that line printed. If nothing on the list
+   fits, it says so and solves the task itself.
 
 A local index hit like this is one fast subprocess call; installing a skill —
 or, on an index miss, the one live registry search, capped at 4 seconds — is
@@ -102,11 +105,12 @@ it.
 
 ## Why it's safe to let an agent install things
 
-An agent that installs packages on its own is the part that should worry you,
-so it's the part with the most machinery. Nothing reaches `~/.claude/skills`
-because "the model felt like it": every candidate walks a fixed pipeline
-(look up → scan verdict → policy decision → pinned install), and the model
-has no say in the decision. The policy file decides.
+An agent that installs packages is the part that should worry you, so it's
+the part with the most machinery. Nothing reaches `~/.claude/skills` because
+"the model felt like it": every candidate walks a fixed pipeline
+(look up → scan verdict → policy decision → your yes → pinned install). The
+model's only say is which candidate it proposes to you; what may be installed
+at all, and on whose word, is the policy file's decision and yours.
 
 The decision table, in order, first match wins:
 
@@ -120,6 +124,15 @@ The decision table, in order, first match wins:
 | ≥ 5000 installs **and** scan clean | auto-install |
 | anything else | ask the user first |
 
+Then one rule over the whole table: while `trust.auto_install` is `false` —
+the shipped default — every **auto-install** above is downgraded to **ask**,
+carrying its original reason with it (`ask: auto-install is off; publisher
+anthropics is allowlisted, scan clean`). Nothing new lands on your disk
+without you saying yes, whatever the policy would otherwise permit. Set
+`auto_install: true` when you want the automatic path back; `deny` is
+untouched either way, because that switch only ever lowers what may happen
+unattended.
+
 What backs it up:
 
 - **The scan verdict comes from the index, not a decision-time download.**
@@ -132,6 +145,13 @@ What backs it up:
   patterns in real code still deny. Naming a package the index has never seen
   (`metaskill install <owner/repo@skill>` by hand) falls back to that same
   scan, live, before deciding.
+- **`find` never installs.** It ranks the local index, runs each candidate
+  past the policy, prints the shortlist with a verdict per row, and stops.
+  The division of labour is deliberate: code ranks, the model picks (only it
+  can tell whether a highly-ranked row actually answers the task), and
+  `metaskill install` enforces the policy on what it picked. An earlier
+  version let the top-ranked hit install itself, and BM25 duly installed
+  third-party skills for prompts like "say hello".
 - **`deny` cannot be bypassed by any flag — install, update, or the
   unattended sync update alike.** A `dirty` verdict is exactly as final as a
   denied publisher, even for an already-installed, allowlisted skill: as of
@@ -142,12 +162,15 @@ What backs it up:
 - **The hook never executes skill code.** It downloads, reads, and greps.
   Skills run later, inside Claude, exactly as if you'd installed them by hand.
 - **Everything is pinned.** Each install lands in
-  `~/.metaskill/skills-lock.json` with source, version, and the query that
-  found it. The daily auto-update (24h-gated `SessionStart` hook) still
-  touches allowlisted publishers only and skips anything the index scans
-  dirty; what it did (or skipped, and why) is reported at the start of the
-  *next* session, since a hook may only emit one line and the protocol always
-  goes out first.
+  `~/.metaskill/skills-lock.json` with source and version. The one thing that
+  still runs unattended is the daily auto-**update** (24h-gated `SessionStart`
+  hook): it refreshes skills you already installed and approved, from
+  allowlisted publishers only, and skips anything the index now scans dirty.
+  It never installs a skill you don't already have, so `trust.auto_install`
+  does not gate it — and it can only ever move a package you already trusted
+  to its current version. What it did (or skipped, and why) is reported at the
+  start of the *next* session, since a hook may only emit one line and the
+  protocol always goes out first.
 - **The registry index ships in the package and refreshes itself.** A fresh
   install can look skills up offline immediately: the npm package carries a
   trimmed snapshot — the 4,831 skills with a real install count, about
@@ -167,15 +190,16 @@ What backs it up:
   and no second bill, ever.
 - **It fails safe.** `find` always exits cleanly, even mid-failure: on an
   internal error, a registry outage, or a timeout, it prints one line and
-  changes nothing. Installs get 120s — the same budget on the unattended path
-  as on the manual one; on timeout the candidate is downgraded to a question
-  rather than left half-installed. The one network fallback (index
-  miss → live registry search) is capped at 4s, and a registry that never
-  answers prints a distinct `Registry did not answer` line rather than being
-  reported as "no skill exists."
-- **When trust is missing, a human decides.** Claude is instructed to ask you
-  exactly one question (publisher, install count, why the task needs it) and
-  installs only after an explicit yes, via the same policy-checked path.
+  changes nothing — it has nothing to leave half-done, since it writes
+  nothing. Installs get 120s. The one network call `find` can make (local
+  index miss → live registry search) is capped at 4s, and a registry that
+  never answers prints a distinct `Registry did not answer` line rather than
+  being reported as "no skill exists."
+- **A human decides, by default on every install.** Claude is instructed to
+  ask you exactly one question (publisher, install count, why the task needs
+  it) and to install only after an explicit yes, via the same policy-checked
+  path. That is the shipped behaviour for every package, trusted or not,
+  until you turn `auto_install` on.
 - **Plugins are suggested, never installed.** When a task matches a Claude
   Code plugin from a marketplace you already added, metaskill surfaces it and
   stops there. Plugins can add hooks and MCP servers, so installing one is
@@ -187,10 +211,11 @@ Tune all of it in `~/.metaskill/metaskill.yaml`:
 
 ```yaml
 trust:
-  allowlist: [anthropics, vercel-labs]        # auto-install and auto-update
+  allowlist: [anthropics, vercel-labs]        # waives the install threshold; gates auto-update
   auto_threshold:
     min_installs: 5000
     require_clean_scan: true
+  auto_install: false  # true lets a trusted, clean match install without asking
   deny_skills: []      # block one skill, even from an otherwise trusted publisher
   deny_publishers: []
 ```
@@ -204,7 +229,7 @@ scan: a dirty verdict still denies, allowlisted or not.
 Skills exist for most of these already. The problem is that nobody installs
 them until after Claude has botched the task once; metaskill flips the order.
 
-| You type | metaskill installs | Instead of |
+| You type | the skill metaskill finds for you | Instead of |
 |---|---|---|
 | "Export the numbers to .xlsx with formulas and conditional formatting" | `xlsx` (anthropics) | hand-rolled openpyxl code with broken styling |
 | "Pull the totals out of these 40 invoice PDFs" | `pdf` | fragile regex over `pdftotext` output |
@@ -218,12 +243,12 @@ them until after Claude has botched the task once; metaskill flips the order.
 | "Pull the deals out of our CRM" | your company's private skill via a policy override | Claude guessing a niche vendor's REST API |
 
 The compounding case: a fresh laptop or a new teammate. Zero setup beyond
-`metaskill init`: the first week of real prompts provisions the same vetted
-toolkit for everyone, because the policy (not each person's patience) decides
-what gets installed.
+`metaskill init`: the first week of real prompts surfaces the same vetted
+shortlist for everyone, because the policy (not each person's patience)
+decides what is even offered.
 
-And when the top candidate is **not** trusted, Claude doesn't install it. It
-asks you exactly one question first:
+Claude never installs any of them on its own. It asks you exactly one
+question first:
 
 > The task looks like it needs xlsx charts. Found `foo/bar@xlsx-charts`
 > (410 installs, publisher not on your allowlist). Install it? (yes/no)
@@ -279,7 +304,7 @@ so a prompt is never routed twice.
 
 ```
 metaskill init [--project] [--uninstall]
-metaskill find "<capability words>"                # local-index lookup; installs on a trusted match
+metaskill find "<capability words>"                # local-index lookup; ranks and vets, never installs
 metaskill install <owner/repo@skill> [--force]      # policy + scan apply
 metaskill update [names...] [--force]
 metaskill list                                      # what metaskill installed (alias: ls)
@@ -289,7 +314,8 @@ metaskill route                                     # UserPromptSubmit hook body
 metaskill sync [--force]                            # SessionStart hook body: injects the protocol, refreshes the index
 ```
 
-`--force` bypasses `ask`, never `deny`.
+`--force` bypasses `ask`, never `deny`. With `trust.auto_install` off (the
+default) every install is an `ask`, so `--force` is how you record your yes.
 
 ## Watching it work
 
@@ -304,25 +330,24 @@ xlsx   anthropics/claude-agent-sdk-demos@xlsx  v1.2.3   -        2026-09-02  ok
 MATCHED is the query phrase that found it. It reads `-` here because this one
 came from an approved `install ... --force` — the yes at the end of the
 walkthrough above — and a package you named by hand has no matching phrase to
-record. A skill `find` installed on its own carries the phrase that found it.
+record. Older locks, written when `find` still installed on its own, carry the
+phrase that found it.
 
 Why, and what it decided along the way — `route` logs every prompt silently,
 `find` logs every lookup:
 
 ```
 $ metaskill log -n 3
-2026-09-02T14:07:56.499Z domains=[] 0ms
-2026-09-02T14:07:56.765Z domains=[find:xlsx export formulas] 238ms
-2026-09-02T14:07:57.141Z domains=[find:scraping] 228ms
+2026-09-02T15:37:28.040Z domains=[] 3ms
+2026-09-02T15:37:28.608Z domains=[find:xlsx export formulas] 517ms
+2026-09-02T15:37:29.296Z domains=[find:scraping] 606ms
 ```
 
-The first line is a plain prompt (`route` — nothing installed, nothing to
-show). The second is the walkthrough's lookup: it matched locally, and printed
-the five candidates without installing any of them. The third is a `find` that
-found nothing to install either. An `installed=[...]` field appears on the
-rows where a lookup did install something. The log records that a lookup
-happened, not why — `find`'s own printed line (and the question it asks you,
-if any) carries that detail in the moment. `metaskill log --stats` rolls the
+The first line is a plain prompt (`route` — it only records that a prompt
+happened). The second is the walkthrough's lookup against the full 43,714-skill
+index; the third is another `find`. Neither installed anything, because `find`
+never does. The log records that a lookup happened, not why — `find`'s own
+printed line, and the question it asks you, carry that detail in the moment. `metaskill log --stats` rolls the
 whole log up into one number: what share of prompts were actually followed by
 a lookup.
 
@@ -352,15 +377,19 @@ parked for the next session).
   `anthropics/skills@xlsx` (a real `os.environ` read in its script), so if you
   already have it installed, updates will be refused until the registry scans
   it clean again.
-- **Install keeps timing out.** Installs get 120 seconds, automatic and
-  manual alike. If one still runs out, finish it by hand:
-  `metaskill install <pkg> --force`.
+- **Install keeps timing out.** Installs get 120 seconds. If one still runs
+  out, run it again: `metaskill install <pkg> --force`.
+- **Claude found a skill but didn't install it.** That's the default.
+  `find` only ranks and vets; Claude asks you before installing, and
+  `--force` records the yes. To let trusted, clean matches through
+  unattended, set `auto_install: true` under `trust:` in
+  `~/.metaskill/metaskill.yaml`.
 
 ## Development
 
 ```
 npm install
-npm test          # build + 175 unit/integration tests (stubbed skills CLI, temp HOME)
+npm test          # build + 214 unit/integration tests (stubbed skills CLI, temp HOME)
 ```
 
 The registry index (`index.json`) is built separately from the CLI and is not
