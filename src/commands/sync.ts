@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import { publisherOf } from "../discover.js";
 import { parseFrontmatter } from "../frontmatter.js";
+import { refreshIndex } from "../index/refresh.js";
 import { readLock, writeLock } from "../lock.js";
 import { pruneLog } from "../log.js";
 import { agentsSkillsDir, claudeUserSkillsDir, skillsCmd } from "../paths.js";
@@ -52,6 +53,12 @@ export async function syncCommand(opts: { force?: boolean } = {}): Promise<numbe
     // Stamp first: a failing registry must not make every session retry.
     writeState({ lastSyncTs: new Date().toISOString() });
 
+    // Runs unconditionally in this branch — even with no skills locked — so
+    // the local index still gets the upgrade path off the packaged snapshot.
+    // The confirmation line below is only emitted once `lines` exists; a
+    // later task makes every exit path emit its protocol block.
+    const idx = await refreshIndex();
+
     const policy = loadPolicy();
     pruneLog(policy);
 
@@ -79,6 +86,7 @@ export async function syncCommand(opts: { force?: boolean } = {}): Promise<numbe
     }
 
     const lines: string[] = [];
+    if (idx.updated) lines.push(`[metaskill] Skill index refreshed: ${idx.skillCount} skills.`);
     if (updated.length) lines.push(`[metaskill] Updated skills: ${updated.join(", ")}.`);
     if (others.length) {
       lines.push(
