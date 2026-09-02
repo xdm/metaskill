@@ -442,6 +442,43 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
 
     fs.rmSync(home, { recursive: true, force: true });
   });
+
+  // A lone pkg-less record degrading gracefully (above) is not the same bug
+  // as this one: `rows = hits.map(...)` throws the instant it reaches ANY
+  // poisoned element, discarding the whole array — so before search() filters
+  // a pkg-less record out at the source, one corrupted record anywhere in the
+  // top-5 hides every well-formed candidate ranked beside it, not just itself.
+  it("a corrupted record inside a mixed batch never hides the well-formed candidates beside it", async () => {
+    const home = freshHome("find-mixed");
+    const idxMixed = writeIndex(
+      home,
+      [
+        {
+          name: "sprocketamatic", source: "anthropics/skills", pkg: "anthropics/skills@sprocketamatic",
+          description: "Sprocketamatic build tool for sprocketamatic pipelines.", installs: 500000,
+          installsPrior: null, estimated: false, atRepoRoot: false, scan: "clean", scanFindings: [],
+          scanAdvisories: [],
+        },
+        {
+          name: "sprocketamatic-ghost", source: "zzz/broken",
+          // pkg omitted on purpose — a corrupted record co-ranked with the
+          // well-formed one above, both inside the default top-5.
+          description: "Sprocketamatic ghost entry with no pkg.", installs: 10, installsPrior: null,
+          estimated: false, atRepoRoot: false, scan: "clean", scanFindings: [], scanAdvisories: [],
+        },
+      ],
+      "index-mixed.json",
+    );
+    const r3 = await runCli(["find", "sprocketamatic", "--index", idxMixed], { home });
+    expect(r3.code).toBe(0);
+    // The failure mode this pins: pre-fix, the whole response collapsed to
+    // the generic "[metaskill] find error: ..." line on stderr, and stdout
+    // was empty — hiding the allowlisted, auto-installable candidate.
+    expect(r3.stdout).toContain("anthropics/skills@sprocketamatic");
+    expect(r3.stdout).not.toContain("sprocketamatic-ghost");
+    expect(readLockFile(home)["anthropics/skills@sprocketamatic"]).toBeTruthy();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
 });
 
 describe("init end-to-end (spec 4.1)", () => {

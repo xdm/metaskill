@@ -67,6 +67,14 @@ export function search(index: IndexFile, query: string, limit = 5): Hit[] {
   for (let i = 0; i < N; i++) {
     const doc = docs[i]!;
     if (!doc.length) continue;
+    // A record with no pkg can't be installed, displayed, logged, or asked
+    // about — it has no business being a hit at all. Filtering here, before
+    // it ever reaches a Hit, means one corrupted record can no longer take
+    // out every well-formed candidate ranked beside it downstream (a thrown
+    // recordToCandidate mid-`.map()` used to discard the whole batch).
+    // Falsy, not `?? `/nullish: an empty-string pkg is exactly as useless.
+    const record = index.skills[i]!;
+    if (!record.pkg) continue;
     const tf = new Map<string, number>();
     for (const t of doc) tf.set(t, (tf.get(t) ?? 0) + 1);
 
@@ -79,7 +87,6 @@ export function search(index: IndexFile, query: string, limit = 5): Hit[] {
       score += idf * ((f * (K1 + 1)) / (f + K1 * (1 - B + (B * doc.length) / avgLen)));
     }
     if (score <= 0) continue;
-    const record = index.skills[i]!;
     const existing = bestByPkg.get(record.pkg);
     if (!existing || score > existing.score) bestByPkg.set(record.pkg, { record, score });
   }
