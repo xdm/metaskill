@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { findByPkg, loadIndex, search, tokenize } from "../src/index/read.js";
+import { findByPkg, loadIndex, normaliseQuery, search, tokenize } from "../src/index/read.js";
 import { INDEX_SCHEMA_VERSION, type IndexFile } from "../src/index/types.js";
 
 const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures/index-sample.json");
@@ -16,6 +16,28 @@ describe("tokenize", () => {
 
   it("returns an empty array for punctuation only", () => {
     expect(tokenize("--- !!!")).toEqual([]);
+  });
+});
+
+// Shared by find.ts (the query) and install.ts (`--matched`) — see index/read.ts.
+// One copy, so a phrase `install --matched` records in the lock is exactly
+// what a later `find` of the same words normalises its query to.
+describe("normaliseQuery", () => {
+  it("lowercases, strips punctuation to spaces, collapses whitespace, and trims", () => {
+    expect(normaliseQuery("  Widget PRESS  formatting!! ")).toBe("widget press formatting");
+  });
+
+  it("keeps internal hyphens", () => {
+    expect(normaliseQuery("Next.js App-Router")).toBe("next js app-router");
+  });
+
+  it("clamps to 60 characters", () => {
+    const long = "a".repeat(80);
+    expect(normaliseQuery(long)).toHaveLength(60);
+  });
+
+  it("normalises punctuation-only input to an empty string", () => {
+    expect(normaliseQuery("!!! ???")).toBe("");
   });
 });
 

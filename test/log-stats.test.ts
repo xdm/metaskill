@@ -46,6 +46,24 @@ describe("followThrough", () => {
     const s = followThrough([e("a"), e("find"), e("find"), e("find")]);
     expect(s).toEqual({ prompts: 1, finds: 3, pct: 100 });
   });
+
+  // "install" rows are `install`'s own bookkeeping (one per successful
+  // install), not a routed prompt or a lookup that followed one — counting
+  // them either way would move the ratio on data that was never a prompt.
+  // `log --stats` on a log with install rows must read identically to the
+  // same log without them.
+  it("counts install rows as neither a prompt nor a find", () => {
+    const withInstalls = followThrough([
+      e("a"),
+      e("b"),
+      e("find", ["find:excel"]),
+      e("install", ["install:o/r@skill"]),
+      e("c"),
+    ]);
+    const without = followThrough([e("a"), e("b"), e("find", ["find:excel"]), e("c")]);
+    expect(withInstalls).toEqual(without);
+    expect(withInstalls).toEqual({ prompts: 3, finds: 1, pct: 33 });
+  });
 });
 
 describe("log --stats output", () => {

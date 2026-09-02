@@ -12,14 +12,25 @@ import type { RouteLogEntry } from "../types.js";
 // before/after.
 const LOOKUP_SESSIONS = new Set(["find", "search", "manual"]);
 
+// Rows metaskill writes about itself rather than about a prompt or a
+// model-driven lookup. "install" is `install`'s own bookkeeping row (spec:
+// one per successful install, so `list`/`log` have a record) — it answers no
+// task and follows no find, so it belongs in neither `finds` (it would
+// inflate follow-through with rows that were never a lookup) nor `prompts`
+// (it would deflate the ratio with a prompt that never happened; a confirmed
+// install can trail a `route` prompt by an arbitrary number of turns, or run
+// from a shell with no prompt behind it at all).
+const EXCLUDED_SESSIONS = new Set(["install"]);
+
 // `pct` is capped at 100. finds > prompts is a real, ordinary state — the
 // protocol asks for a find per TASK while route logs one row per PROMPT, so a
 // single prompt carrying three tasks legitimately produces three finds — and
 // "follow-through=300%" reads as a broken counter, not as good news. The
 // uncapped truth is still available: prompts and finds are printed raw.
 export function followThrough(entries: RouteLogEntry[]): { prompts: number; finds: number; pct: number } {
-  const finds = entries.filter((e) => LOOKUP_SESSIONS.has(e.session)).length;
-  const prompts = entries.length - finds;
+  const counted = entries.filter((e) => !EXCLUDED_SESSIONS.has(e.session));
+  const finds = counted.filter((e) => LOOKUP_SESSIONS.has(e.session)).length;
+  const prompts = counted.length - finds;
   return { prompts, finds, pct: prompts ? Math.min(100, Math.round((finds / prompts) * 100)) : 0 };
 }
 

@@ -695,6 +695,103 @@ describe("find: reinstall protection matches a name, never a word inside one", (
   });
 });
 
+describe("find -> install --matched: the phrase a confirmed install records", () => {
+  // Both `find` (default lookup, no --index) and `install` (no --index flag
+  // at all) resolve the local index through the same METASKILL_INDEX env var
+  // runCli sets for every spawned process — see its comment above — so
+  // seeding it here, rather than through writeIndex's own `home/index.json`,
+  // is what lets one seeded index answer both commands in the same test.
+  function seedIndex(home: string, skills: unknown[]): void {
+    fs.mkdirSync(path.join(home, ".metaskill"), { recursive: true });
+    fs.writeFileSync(path.join(home, ".metaskill", "index.json"), JSON.stringify(indexFile(skills)));
+  }
+
+  it("a find -> install --matched round trip lands the phrase under MATCHED", async () => {
+    const home = freshHome("find-install-roundtrip");
+    seedIndex(home, [
+      rec({ name: "widget-press", source: "acme/tools", pkg: "acme/tools@widget-press",
+            description: "Press widgets into shape with formatting presets.", installs: 500 }),
+    ]);
+
+    const found = await runCli(["find", "Widget Press  formatting!"], { home });
+    expect(found.code).toBe(0);
+    expect(found.stdout).toContain('Top matches for "widget press formatting"');
+
+    // Parse the printed command instead of assuming its shape — exactly what
+    // the model does before running it.
+    const cmdLine = found.stdout.split("\n").find((l) => l.includes("Install only on the user's explicit yes:"));
+    expect(cmdLine).toBeDefined();
+    const matchedArg = /--matched "([^"]*)"/.exec(cmdLine!)?.[1];
+    expect(matchedArg).toBe("widget press formatting");
+
+    const installed = await runCli(
+      ["install", "acme/tools@widget-press", "--force", "--matched", matchedArg!],
+      { home },
+    );
+    expect(installed.code).toBe(0);
+    expect(readLockFile(home)["acme/tools@widget-press"]).toMatchObject({ domain: "widget press formatting" });
+
+    const list = await runCli(["list"], { home });
+    expect(list.stdout).toMatch(
+      /^widget-press\s+acme\/tools@widget-press\s+v1\.2\.3\s+widget press formatting\s+/m,
+    );
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("install sanitises --matched exactly as find sanitises its query", async () => {
+    const home = freshHome("install-matched-sanitise");
+    seedIndex(home, [
+      rec({ name: "widget-press", source: "acme/tools", pkg: "acme/tools@widget-press",
+            description: "Press widgets into shape with formatting presets.", installs: 500 }),
+    ]);
+
+    const installed = await runCli(
+      ["install", "acme/tools@widget-press", "--force", "--matched", "  Widget PRESS  formatting!! "],
+      { home },
+    );
+    expect(installed.code).toBe(0);
+    expect(readLockFile(home)["acme/tools@widget-press"]).toMatchObject({ domain: "widget press formatting" });
+
+    // A following find for the normalised phrase short-circuits via the
+    // lock (alreadyPresent in find.ts), never touching the index or running
+    // a live registry lookup through the stub.
+    const found = await runCli(["find", "widget press formatting"], { home });
+    expect(found.stdout).toContain("Already present: widget-press");
+    expect(stubCalls(home).filter((c) => c[0] === "find")).toEqual([]);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("install logs one row per successful install and none on refusal", async () => {
+    const home = freshHome("install-log-rows");
+    seedIndex(home, [
+      rec({ name: "gizmo", source: "anthropics/skills", pkg: "anthropics/skills@gizmo",
+            description: "Gizmo automation toolkit.", installs: 999999 }),
+    ]);
+    const logPath = path.join(home, ".metaskill", "log.jsonl");
+    const readLog = (): any[] =>
+      fs.existsSync(logPath)
+        ? fs.readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l))
+        : [];
+
+    // trust.auto_install is off by default, so without --force this is a
+    // refusal (not a success) and must log nothing.
+    const refused = await runCli(["install", "anthropics/skills@gizmo"], { home });
+    expect(refused.code).toBe(1);
+    expect(readLog()).toEqual([]);
+
+    const forced = await runCli(["install", "anthropics/skills@gizmo", "--force"], { home });
+    expect(forced.code).toBe(0);
+    const log = readLog();
+    expect(log).toHaveLength(1);
+    expect(log[0]).toMatchObject({
+      session: "install",
+      domains: ["install:anthropics/skills@gizmo"],
+      installed: ["anthropics/skills@gizmo"],
+    });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+});
+
 describe("the packaged snapshot is the offline floor", () => {
   // Deleting `?? readOne(snapshotPath())` from loadIndex left the whole suite
   // green: nothing exercised the fallback, because snapshotPath() resolves

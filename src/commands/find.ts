@@ -1,4 +1,4 @@
-import { loadIndex, scanResultFromIndex, search } from "../index/read.js";
+import { loadIndex, normaliseQuery, scanResultFromIndex, search } from "../index/read.js";
 import { metaskillCmd } from "../paths.js";
 import type { IndexRecord } from "../index/types.js";
 import { discoverByQuery, publisherOf } from "../discover.js";
@@ -30,10 +30,12 @@ export function recordToCandidate(r: IndexRecord): Candidate {
 //
 //   (i)  an installed skill whose name IS the query (spaces -> hyphens), or
 //   (ii) the lock recording this exact phrase as the phrase that installed it
-//        (LockEntry.domain). `find` no longer installs anything, so nothing
-//        writes that field today; it is still read, because locks written by
-//        earlier versions carry it and a user who has one should keep the
-//        short-circuit it earned.
+//        (LockEntry.domain) — written by `install --matched "<q>"`, using the
+//        same normaliser this file's `q` already went through, so a repeat of
+//        the phrase that found a skill short-circuits here next time. `find`
+//        itself still never installs and never writes the lock; it only
+//        reads this field, which is also why locks written by an earlier
+//        version (before `install` recorded it) still short-circuit too.
 //
 // Anything else goes to the index. The cost of being wrong in this direction
 // is one extra local lookup; the cost in the other direction was the model
@@ -72,7 +74,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
   const t0 = Date.now();
   try {
     const policy = loadPolicy();
-    const q = query.toLowerCase().replace(/[^a-z0-9 -]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
+    const q = normaliseQuery(query);
     if (q.length < 3) {
       process.stderr.write('usage: metaskill find "<capability words>"\n');
       return 2;
@@ -209,7 +211,10 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       `[metaskill] Top matches for "${q}" — find does not install. Judge whether one of these actually fits the task; ` +
         `if none does, solve it yourself. Before installing any, ask the user ONE question:\n` +
         askable.map((x) => line(x.r, x.rel, x.v.decision, x.v.reason)).join("\n") +
-        `\nInstall only on the user's explicit yes: ${metaskillCmd()} install <pkg> --force\n${deniedBlock}${pluginLine}`,
+        // --matched carries this exact (already-normalised) query into the
+        // lock on a confirmed install, so a repeat of it short-circuits here
+        // next time via alreadyPresent's lock check above — see install.ts.
+        `\nInstall only on the user's explicit yes: ${metaskillCmd()} install <pkg> --force --matched "${q}"\n${deniedBlock}${pluginLine}`,
     );
     logFind([]);
     return 0;

@@ -36,6 +36,22 @@ export function tokenize(s: string): string[] {
     .filter((t) => t.length > 1);
 }
 
+// Shared by `find` (the query it searches with) and `install` (`--matched`,
+// so a confirmed install's lock entry records the phrase in exactly the form
+// `find`'s reinstall check compares against — see find.ts's alreadyPresent).
+// One function, not two copies: an unsanitised `--matched` would either never
+// match a later `find`'s normalised query, or, if over-broad, permanently
+// short-circuit unrelated future finds onto this one skill. Lives here rather
+// than in either command module so neither has to import the other.
+export function normaliseQuery(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9 -]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60);
+}
+
 export function indexPath(): string {
   return path.join(metaskillHome(), "index.json");
 }

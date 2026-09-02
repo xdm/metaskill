@@ -1,20 +1,29 @@
 import { publisherOf } from "../discover.js";
-import { findByPkg, loadIndex, scanResultFromIndex } from "../index/read.js";
+import { findByPkg, loadIndex, normaliseQuery, scanResultFromIndex } from "../index/read.js";
 import { installSkill } from "../install.js";
+import { appendLog, hashPrompt } from "../log.js";
 import { decide, loadPolicy } from "../policy.js";
 import { scanCandidate } from "../scan.js";
 import type { Candidate, ScanResult } from "../types.js";
 
 export interface InstallFlags {
   force?: boolean;
+  // The phrase that found this package — normally copied verbatim from the
+  // `--matched "<q>"` flag on the command `find` itself printed, already
+  // normalised there. Normalised again here through the SAME function (never
+  // a second copy — see index/read.ts), so a hand-typed or edited value lands
+  // in the lock exactly as `find`'s reinstall check needs it to short-circuit
+  // a repeat of the phrase that found this skill.
+  matched?: string;
 }
 
 // Manual `metaskill install <pkg>`: same policy and scan as the automatic
 // path. --force bypasses `ask` but never `deny` — deny cannot be bypassed by
 // any flag, on this path or the automatic one.
 export async function installCommand(pkg: string | undefined, flags: InstallFlags): Promise<number> {
+  const t0 = Date.now();
   if (!pkg) {
-    process.stderr.write("usage: metaskill install <owner/repo@skill> [--force]\n");
+    process.stderr.write('usage: metaskill install <owner/repo@skill> [--force] [--matched "<phrase>"]\n');
     return 2;
   }
   const policy = loadPolicy();
@@ -60,11 +69,41 @@ export async function installCommand(pkg: string | undefined, flags: InstallFlag
     return 1;
   }
 
-  const res = await installSkill(pkg, undefined, { timeoutMs: 120_000 });
+  // Empty, not merely undefined, collapses to "no phrase": a `--matched`
+  // that normalises away to nothing (e.g. all punctuation) must not record an
+  // empty-string domain, which `list` would render as a blank cell rather
+  // than "-".
+  const matched = normaliseQuery(flags.matched ?? "");
+  const domain = matched.length ? matched : undefined;
+
+  const res = await installSkill(pkg, domain, { timeoutMs: 120_000 });
   if (!res.ok) {
     process.stderr.write(`install failed: ${res.error ?? "unknown error"}\n`);
     return 1;
   }
+
+  // One row per successful install, logged here rather than inside
+  // installSkill: this is the only caller a human (via --force) or the
+  // model's confirmed "yes" actually drives, so it is the only one that
+  // should count. A refused install (deny, or ask without --force) returns
+  // above and never reaches this line — nothing is logged for it.
+  // followThrough (log.ts) excludes session "install" from both its prompt
+  // and find counts: this row is bookkeeping, not a lookup or a routed
+  // prompt.
+  appendLog(
+    {
+      ts: new Date().toISOString(),
+      session: "install",
+      prompt_hash: hashPrompt(`install:${pkg}`),
+      domains: [`install:${pkg}`],
+      covered: [],
+      discovered: [],
+      installed: [pkg],
+      latency_ms: Date.now() - t0,
+    },
+    policy,
+  );
+
   process.stdout.write(
     `Installed ${pkg}${res.version ? ` (v${res.version})` : ""}${res.skillMdPath ? ` -> ${res.skillMdPath}` : ""}\n`,
   );
