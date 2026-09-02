@@ -85,7 +85,10 @@ export function search(index: IndexFile, query: string, limit = 5): Hit[] {
   }
 
   const hits = [...bestByPkg.values()];
-  // Tie-break on pkg so equal scores never reorder between runs.
-  hits.sort((a, b) => b.score - a.score || a.record.pkg.localeCompare(b.record.pkg));
+  // Tie-break on pkg so equal scores never reorder between runs. `?? ""`
+  // guards a record whose `pkg` a corrupted or hand-edited index.json
+  // dropped — well-formed records (the overwhelming case) compare exactly
+  // as before, since neither side is ever nullish for them.
+  hits.sort((a, b) => b.score - a.score || (a.record.pkg ?? "").localeCompare(b.record.pkg ?? ""));
   return hits.slice(0, limit);
 }

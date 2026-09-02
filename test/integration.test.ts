@@ -71,6 +71,18 @@ function hookInput(prompt: string, cwd: string, field = "user_prompt"): string {
   return JSON.stringify({ session_id: "test-session", cwd, [field]: prompt, hook_event_name: "UserPromptSubmit" });
 }
 
+// Writes a synthetic index.json for `find --index`. Deliberately untyped
+// (`any`): some tests hand it index records that don't conform to
+// IndexRecord on purpose, to reproduce a corrupted/hand-edited index.json.
+function writeIndex(home: string, skills: any[], filename = "index.json"): string {
+  const file = path.join(home, filename);
+  fs.writeFileSync(
+    file,
+    JSON.stringify({ schemaVersion: 1, builtAt: new Date().toISOString(), skillCount: skills.length, repoCount: 1, skills }),
+  );
+  return file;
+}
+
 describe("route end-to-end (stubbed skills CLI)", () => {
   it("installs an allowlisted skill, asks about an unknown publisher, logs everything", async () => {
     const home = freshHome("route");
@@ -271,6 +283,163 @@ describe("route end-to-end (stubbed skills CLI)", () => {
     const r = await runCli(["route"], { home, input: "this is not json{{{" });
     expect(r.code).toBe(0);
     expect(r.stdout).toBe("");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+});
+
+describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
+  it("threads --index through the real CLI (regression guard for the parseArgs prerequisite)", async () => {
+    const home = freshHome("find-flag");
+    const idx = writeIndex(home, [
+      {
+        name: "widgetzzz", source: "acme/tools", pkg: "acme/tools@widgetzzz",
+        description: "Manipulate zzz widgets end to end.", installs: 100, installsPrior: null,
+        estimated: false, atRepoRoot: false, scan: "clean", scanFindings: [], scanAdvisories: [],
+      },
+    ]);
+    // If --index were parsed as a boolean (the bug the brief's parseArgs
+    // ordering step guards against), the path would leak into the query and
+    // opts.index would be undefined, so loadIndex would fall back to the
+    // packaged snapshot/default home — neither of which has heard of a
+    // test-only package like this one.
+    const r = await runCli(["find", "widgetzzz", "--index", idx], { home });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain("acme/tools@widgetzzz");
+    expect(r.stdout).toContain("[ask: publisher acme not allowlisted]");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("too-short query: usage error, exit 2", async () => {
+    const home = freshHome("find-short");
+    const r = await runCli(["find", "ab"], { home });
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('usage: metaskill find "<capability words>"');
+    expect(r.stdout).toBe("");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("local hit -> auto decision -> install succeeds, names the installed package", async () => {
+    const home = freshHome("find-auto");
+    const idx = writeIndex(home, [
+      {
+        name: "gizmo", source: "anthropics/skills", pkg: "anthropics/skills@gizmo",
+        description: "Gizmo automation toolkit for gizmo workflows.", installs: 999999, installsPrior: null,
+        estimated: false, atRepoRoot: false, scan: "clean", scanFindings: [], scanAdvisories: [],
+      },
+    ]);
+    const r = await runCli(["find", "gizmo automation", "--index", idx], { home });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain("Installed now: anthropics/skills@gizmo");
+    expect(r.stdout).toContain("Read that SKILL.md and follow it.");
+    expect(fs.existsSync(path.join(home, ".claude", "skills", "gizmo", "SKILL.md"))).toBe(true);
+    expect(readLockFile(home)["anthropics/skills@gizmo"]).toMatchObject({ skill: "gizmo", version: "1.2.3" });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("install failure never claims success — prints the ask-and-retry line", async () => {
+    const home = freshHome("find-failinstall");
+    const idx = writeIndex(home, [
+      {
+        name: "thingamajig", source: "anthropics/skills", pkg: "anthropics/skills@thingamajig",
+        description: "Thingamajig helper for thingamajig tasks.", installs: 999999, installsPrior: null,
+        estimated: false, atRepoRoot: false, scan: "clean", scanFindings: [], scanAdvisories: [],
+      },
+    ]);
+    const r = await runCli(["find", "thingamajig", "--index", idx], { home, env: { STUB_ADD_FAIL: "1" } });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain(
+      "Install failed — ask the user, then run: metaskill install anthropics/skills@thingamajig --force",
+    );
+    expect(r.stdout).not.toContain("Installed now:");
+    expect(readLockFile(home)["anthropics/skills@thingamajig"]).toBeUndefined();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("nothing qualifies for auto: ranked ask-block with install counts and decisions", async () => {
+    const home = freshHome("find-ask");
+    const idx = writeIndex(home, [
+      {
+        name: "snorklex", source: "someorg/repo", pkg: "someorg/repo@snorklex",
+        description: "Snorklex data processor for snorklex pipelines.", installs: 42, installsPrior: null,
+        estimated: false, atRepoRoot: false, scan: "clean", scanFindings: [], scanAdvisories: [],
+      },
+      {
+        name: "snorklex-lite", source: "otherorg/tools", pkg: "otherorg/tools@snorklex-lite",
+        description: "Lightweight snorklex helper.", installs: null, installsPrior: 12,
+        estimated: true, atRepoRoot: false, scan: "clean", scanFindings: [], scanAdvisories: [],
+      },
+    ]);
+    const r = await runCli(["find", "snorklex", "--index", idx], { home });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('Top matches for "snorklex"');
+    expect(r.stdout).toContain("someorg/repo@snorklex (42 installs");
+    expect(r.stdout).toContain("otherorg/tools@snorklex-lite (~12 est installs");
+    expect(r.stdout).toContain("[ask:");
+    expect(r.stdout).toContain("On an explicit yes run: metaskill install <pkg> --force");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  // Pins findings A, B and C together: a dirty record with no scanFindings
+  // key, a clean record with scanAdvisories explicitly null, and — separate
+  // query, separate index — two same-scoring records where one has no pkg
+  // at all. loadIndex/readOne only checks that `skills` is an array, never
+  // each record's shape, so all four are realistic corruption, not just
+  // adversarial input.
+  it("a malformed index record never crashes the command", async () => {
+    const home = freshHome("find-malformed");
+
+    const idxScan = writeIndex(
+      home,
+      [
+        {
+          name: "flumbex-a", source: "foo/bar", pkg: "foo/bar@flumbex-a",
+          description: "Flumbex processor for flumbex pipelines.", installs: 50, installsPrior: null,
+          estimated: false, atRepoRoot: false, scan: "dirty", scanAdvisories: [],
+          // scanFindings key omitted on purpose
+        },
+        {
+          name: "flumbex-b", source: "foo/bar", pkg: "foo/bar@flumbex-b",
+          description: "Flumbex variant tool for flumbex tasks.", installs: 30, installsPrior: null,
+          estimated: false, atRepoRoot: false, scan: "clean", scanFindings: [], scanAdvisories: null,
+        },
+      ],
+      "index-scan.json",
+    );
+    const r1 = await runCli(["find", "flumbex", "--index", idxScan], { home });
+    expect(r1.code).toBe(0);
+    expect(r1.stderr).toBe("");
+    expect(r1.stdout).toContain("foo/bar@flumbex-a");
+    expect(r1.stdout).toContain("foo/bar@flumbex-b");
+    expect(r1.stdout).not.toContain("find error");
+
+    const idxPkg = writeIndex(
+      home,
+      [
+        {
+          name: "quibblexyz", source: "zzz/pkg", pkg: "zzz/pkg@quibblexyz",
+          description: "Quibblexyz tool for quibblexyz tasks.", installs: 5, installsPrior: null,
+          estimated: false, atRepoRoot: false, scan: "clean", scanFindings: [], scanAdvisories: [],
+        },
+        {
+          name: "quibblexyz", source: "zzz/pkg",
+          // pkg omitted on purpose — ties in BM25 score with the record
+          // above (identical name/description), which is what forces
+          // search()'s tie-break comparator to actually run on it.
+          description: "Quibblexyz tool for quibblexyz tasks.", installs: 5, installsPrior: null,
+          estimated: false, atRepoRoot: false, scan: "clean", scanFindings: [], scanAdvisories: [],
+        },
+      ],
+      "index-pkg.json",
+    );
+    const r2 = await runCli(["find", "quibblexyz", "--index", idxPkg], { home });
+    expect(r2.code).toBe(0);
+    // The raw-crash path (uncaught exception -> cli.ts's top-level handler)
+    // always writes "metaskill: <stack>" and exits 1; neither ever happens
+    // here, whether this record made it into a clean top-matches line or
+    // was caught by findCommand's own try/catch.
+    expect(r2.stderr).not.toMatch(/^metaskill: /m);
+    expect(r2.stdout + r2.stderr).toContain("[metaskill]");
+
     fs.rmSync(home, { recursive: true, force: true });
   });
 });
