@@ -1,37 +1,13 @@
-import { readCache } from "../cache.js";
-import { classifyHeuristic } from "../classify/heuristics.js";
-import { buildContext, type RouteReport } from "../context.js";
-import { discover, discoverByQuery, publisherOf } from "../discover.js";
-import { installSkill } from "../install.js";
-import { coverage, listInstalledSkills } from "../inventory.js";
 import { appendLog, hashPrompt } from "../log.js";
-import { decide, loadPolicy } from "../policy.js";
-import { scanCandidate } from "../scan.js";
-import type { Candidate, DiscoveredLogItem, ScanResult } from "../types.js";
-
-import { cliEntryPath } from "../paths.js";
-import { findPlugins, formatPluginLine } from "../plugins.js";
-import { mergedTaxonomy, type DomainDef } from "../taxonomy.js";
+import { loadPolicy } from "../policy.js";
 
 interface HookInput {
   session_id?: string;
-  cwd?: string;
-  prompt?: string; // older Claude Code builds
-  user_prompt?: string; // current builds
+  prompt?: string;
+  user_prompt?: string;
   user_prompt_raw?: string;
 }
 
-function emit(context: string): void {
-  process.stdout.write(
-    JSON.stringify({
-      hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: context },
-    }) + "\n",
-  );
-}
-
-// Classification happens in-session: the model reading this context IS the
-// classifier — ask it to name the capability and re-enter route with
-// --search (or --domains). metaskill never calls a model itself.
 const SYSTEM_TRAFFIC_MARKERS = [
   "[SYSTEM NOTIFICATION",
   "<task-notification>",
@@ -46,306 +22,35 @@ export function isSystemTraffic(prompt: string): boolean {
   return SYSTEM_TRAFFIC_MARKERS.some((m) => head.includes(m));
 }
 
-// No fixed vocabulary here on purpose: the model derives the capability
-// phrase itself, so skills the taxonomy never heard of are still found.
-function selfClassifyContext(): string {
-  // The running instance's own path: correct whether route was launched from
-  // the plugin cache, the self-installed engine, or a global install.
-  const cli = `node "${cliEntryPath()}"`;
-  return (
-    `[metaskill] Task not classified. If a specialized skill could help this task, run ` +
-    `\`${cli} route --search "<2-4 english words for the capability, e.g. reddit automation>"\` ` +
-    `via Bash, read its output, then solve the task with whatever it installed. ` +
-    `If no skill would help, just solve the task.`
-  );
-}
-
-export interface RouteOpts {
-  // Explicit domains (`route --domains xlsx,scraping`): the in-session model
-  // classified the task itself; skip local classification, print plain text.
-  domains?: string[];
-  // Free registry search (`route --search "reddit automation"`): the model
-  // derived a capability phrase; no taxonomy involved, same policy + scan.
-  search?: string;
-}
-
-// UserPromptSubmit hook body (spec 4.2). Hard rule: never break the user's
-// prompt — every failure path logs to stderr and exits 0 with no output.
-export async function routeCommand(stdinText: string, opts: RouteOpts = {}): Promise<number> {
+// Classification moved into the session: the model runs `metaskill find` under
+// the standing protocol injected at SessionStart. This hook now only records
+// that a prompt happened, which is what the follow-through metric is measured
+// against. It never writes to stdout, so it can never disturb the prompt.
+export async function routeCommand(stdinText: string): Promise<number> {
   const t0 = Date.now();
   try {
-    const policy = loadPolicy();
-    const taxonomy = mergedTaxonomy(policy.customDomains);
-    const taxonomyIds: ReadonlySet<string> = new Set(taxonomy.map((d) => d.id));
-
-    const manual = (opts.domains ?? []).filter((d) => taxonomyIds.has(d));
-    if (opts.domains && !manual.length) {
-      process.stderr.write(`metaskill: no valid domains in "${opts.domains.join(",")}"\n`);
-      return 2;
-    }
-
-    // Free registry search: the in-session model derived a capability phrase.
-    // Same discovery cache, same policy, same scan — no taxonomy boundary.
-    if (opts.search !== undefined) {
-      const query = opts.search
-        .toLowerCase()
-        .replace(/[^a-z0-9 -]/g, " ")
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 60)
-        .trim();
-      if (query.length < 3) {
-        process.stderr.write('usage: metaskill route --search "<capability words>"\n');
-        return 2;
-      }
-      const searchLog = (
-        decision: import("../types.js").Decision | null,
-        scanStatus: import("../types.js").ScanStatus,
-        candidate: Candidate | null,
-        installedPkg?: string,
-      ) =>
-        appendLog(
-          {
-            ts: new Date().toISOString(),
-            session: "search",
-            prompt_hash: hashPrompt(`search:${query}`),
-            domains: [`search:${query}`],
-            covered: [],
-            discovered: candidate
-              ? [{ pkg: candidate.pkg, installs: candidate.installs, publisher: candidate.publisher, decision: decision ?? "ask", scan: scanStatus }]
-              : [],
-            installed: installedPkg ? [installedPkg] : [],
-            latency_ms: Date.now() - t0,
-          },
-          policy,
-        );
-
-      // A matching Claude Code plugin is worth surfacing even when a skill
-      // was found: plugins can bring MCP servers and tooling a skill cannot.
-      // Never installed here — that stays an explicit human decision.
-      const pluginHit = findPlugins(query, 1)[0];
-      const pluginLine = pluginHit && !pluginHit.installed
-        ? `[metaskill] ${formatPluginLine(pluginHit)} — ask the user before installing it; on yes: /plugin install ${pluginHit.name}@${pluginHit.marketplace}\n`
-        : "";
-
-      // Reinstall protection, level 1: an installed skill whose name matches
-      // the query words answers the search without touching the registry.
-      const installed = listInstalledSkills(process.cwd());
-      const queryWords = query.split(" ").filter((w) => w.length >= 3);
-      const present = installed.find((s) => queryWords.some((w) => s.name.toLowerCase().includes(w)));
-      if (present) {
-        process.stdout.write(`[metaskill] Already present: ${present.name} — use ${present.dir}/SKILL.md\n${pluginLine}`);
-        appendLog(
-          {
-            ts: new Date().toISOString(),
-            session: "search",
-            prompt_hash: hashPrompt(`search:${query}`),
-            domains: [`search:${query}`],
-            covered: [present.name],
-            discovered: [],
-            installed: [],
-            latency_ms: Date.now() - t0,
-          },
-          policy,
-        );
-        return 0;
-      }
-
-      const cands = await discoverByQuery(query);
-      // Level 2: any discovered candidate that is already on disk wins over
-      // installing a different, more popular one.
-      const installedNames = new Set(installed.map((s) => s.name));
-      const known = cands.find((c) => installedNames.has(c.skillName));
-      if (known) {
-        process.stdout.write(`[metaskill] Already present: ${known.skillName} — use ~/.claude/skills/${known.skillName}/SKILL.md\n${pluginLine}`);
-        searchLog("auto", "skipped", known);
-        return 0;
-      }
-      const candidate = [...cands].sort((a, b) => b.installs - a.installs)[0];
-      if (!candidate) {
-        process.stdout.write(`[metaskill] No skills found for "${query}". Solve the task without one.\n${pluginLine}`);
-        searchLog(null, "skipped", null);
-        return 0;
-      }
-      let scan: ScanResult = { status: "skipped", findings: [], advisories: [] };
-      if (!policy.trust.allowlist.includes(candidate.publisher) && !policy.trust.denyPublishers.includes(candidate.publisher)) {
-        scan = await scanCandidate(candidate, policy);
-      }
-      const verdict = decide(candidate, scan, policy);
-      if (verdict.decision === "auto") {
-        const res = await installSkill(candidate.pkg, undefined);
-        if (res.ok) {
-          process.stdout.write(
-            `[metaskill] Installed now: ${candidate.pkg}${res.version ? ` (v${res.version})` : ""}${res.skillMdPath ? ` -> ${res.skillMdPath}` : ""}\n${pluginLine}`,
-          );
-          searchLog("auto", scan.status, candidate, candidate.pkg);
-        } else {
-          process.stdout.write(
-            `[metaskill] Install ${res.timedOut ? "timed out" : "failed"} — ask the user, then run: metaskill install ${candidate.pkg} --force\n${pluginLine}`,
-          );
-          searchLog("ask", scan.status, candidate);
-        }
-      } else if (verdict.decision === "ask") {
-        process.stdout.write(
-          `[metaskill] Needs confirmation: ${candidate.pkg} (${candidate.installs} installs, ${verdict.reason}) — ask the user one question; on an explicit yes run: metaskill install ${candidate.pkg} --force\n${pluginLine}`,
-        );
-        searchLog("ask", scan.status, candidate);
-      } else {
-        process.stdout.write(`[metaskill] Denied by policy: ${candidate.pkg} (${verdict.reason}). Solve without it.\n${pluginLine}`);
-        searchLog("deny", scan.status, candidate);
-      }
-      return 0;
-    }
-
     let input: HookInput;
     try {
       input = JSON.parse(stdinText || "{}") as HookInput;
     } catch {
-      input = {};
+      return 0;
     }
     const prompt = input.user_prompt ?? input.prompt ?? input.user_prompt_raw ?? "";
-    const cwd = input.cwd ?? process.cwd();
-    const session = input.session_id ?? (manual.length ? "manual" : "");
-    if (!manual.length && !prompt.trim()) return 0;
-    // System/tool traffic arrives through UserPromptSubmit too (task
-    // notifications, hook chatter, pasted tool output). Mentioning "pdf" in a
-    // notification must not install a pdf skill — only human task text counts.
-    if (!manual.length && isSystemTraffic(prompt)) return 0;
+    if (!prompt.trim() || isSystemTraffic(prompt)) return 0;
 
-    // 1-2: triviality + classification (local heuristics; on a miss the
-    // in-session model classifies), unless it already did (--domains).
-    let domains: string[] = manual;
-    if (!manual.length) {
-      const h = classifyHeuristic(prompt, cwd, policy.classifier.trivialMaxChars, taxonomy);
-      domains = [...h.domains];
-      if (h.trivial) return 0;
-      if (domains.length === 0) {
-        // Classification miss: log it (spec 4.6) and hand classification to
-        // the in-session model itself.
-        emit(selfClassifyContext());
-        appendLog(
-          {
-            ts: new Date().toISOString(),
-            session,
-            prompt_hash: hashPrompt(prompt),
-            domains: [],
-            covered: [],
-            discovered: [],
-            installed: [],
-            latency_ms: Date.now() - t0,
-          },
-          policy,
-        );
-        return 0;
-      }
-    }
-
-    // 3: inventory
-    const installed = listInstalledSkills(cwd);
-    const cache = readCache();
-    const cov = coverage(domains, installed, policy, cache);
-
-    const report: RouteReport = {
-      domains,
-      installedNow: [],
-      present: Object.entries(cov.covered).map(([domain, skill]) => ({ domain, skill })),
-      ask: [],
-      denied: 0,
-    };
-    const discoveredLog: DiscoveredLogItem[] = [];
-    const installedPkgs: string[] = [];
-
-    // 4-6: discovery -> policy(+scan) -> auto-install, per uncovered domain
-    for (const domainId of cov.uncovered) {
-      const def: DomainDef | undefined = taxonomy.find((d) => d.id === domainId);
-      if (!def) continue;
-
-      let candidate: Candidate | null = null;
-      const override = policy.domains[domainId];
-      if (override) {
-        candidate = {
-          pkg: override,
-          publisher: publisherOf(override),
-          skillName: override.slice(override.lastIndexOf("@") + 1),
-          installs: 0,
-          url: "",
-        };
-      } else {
-        const cands = await discover(def);
-        if (cands.length) {
-          // Ranking: allowlisted publisher first (trusted AND relevant beats
-          // merely popular — query "react" must pick vercel-labs' react skill,
-          // not a same-named niche tool), then exact name match (query
-          // "python" must not pick a vendor deploy skill), then popularity.
-          const rank = (c: Candidate) =>
-            (policy.trust.allowlist.includes(c.publisher) ? 2 : 0) +
-            (c.skillName === domainId ? 1 : 0);
-          candidate = [...cands].sort((a, b) => rank(b) - rank(a) || b.installs - a.installs)[0]!;
-        }
-      }
-      if (!candidate) continue; // coverage gap — visible in the log as a domain with no discovery
-
-      let scan: ScanResult = { status: "skipped", findings: [], advisories: [] };
-      const pub = candidate.publisher;
-      if (!policy.trust.allowlist.includes(pub) && !policy.trust.denyPublishers.includes(pub)) {
-        scan = await scanCandidate(candidate, policy);
-      }
-
-      let verdict = decide(candidate, scan, policy);
-      if (verdict.decision === "auto") {
-        const res = await installSkill(candidate.pkg, domainId);
-        if (res.ok) {
-          report.installedNow.push({ pkg: candidate.pkg, version: res.version, path: res.skillMdPath });
-          installedPkgs.push(candidate.pkg);
-        } else {
-          // spec 4.2.6: install timeout downgrades the candidate to ask
-          verdict = { decision: "ask", reason: res.timedOut ? "install timed out" : "install failed" };
-          report.ask.push({
-            candidate,
-            reason: `${verdict.reason} — run \`metaskill install ${candidate.pkg} --force\``,
-          });
-        }
-      } else if (verdict.decision === "ask") {
-        report.ask.push({ candidate, reason: verdict.reason });
-      } else {
-        report.denied++;
-      }
-      discoveredLog.push({
-        pkg: candidate.pkg,
-        installs: candidate.installs,
-        publisher: pub,
-        decision: verdict.decision,
-        scan: scan.status,
-      });
-    }
-
-    // 7: log FIRST (hash only, never the prompt — spec 4.6). The hook can be
-    // killed by its timeout right after a slow install; losing the context
-    // block is survivable, losing the audit line is not.
     appendLog(
       {
         ts: new Date().toISOString(),
-        session,
+        session: input.session_id ?? "",
         prompt_hash: hashPrompt(prompt),
-        domains,
-        covered: Object.keys(cov.covered),
-        discovered: discoveredLog,
-        installed: installedPkgs,
+        domains: [],
+        covered: [],
+        discovered: [],
+        installed: [],
         latency_ms: Date.now() - t0,
       },
-      policy,
+      loadPolicy(),
     );
-
-    // 8: context out (hook mode: hookSpecificOutput JSON; --domains mode runs
-    // mid-conversation via Bash, so plain text is the readable form)
-    const ctx = buildContext(report);
-    if (manual.length) {
-      process.stdout.write(
-        (ctx ?? `[metaskill] Domains: ${domains.join(", ")}. Nothing to install and nothing already present.`) + "\n",
-      );
-    } else if (ctx) {
-      emit(ctx);
-    }
     return 0;
   } catch (err) {
     process.stderr.write(`[metaskill] route error: ${(err as Error).message}\n`);

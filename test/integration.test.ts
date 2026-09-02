@@ -79,10 +79,6 @@ function readStateFile(home: string): { lastSyncTs?: string; pendingNotices?: st
   }
 }
 
-function hookInput(prompt: string, cwd: string, field = "user_prompt"): string {
-  return JSON.stringify({ session_id: "test-session", cwd, [field]: prompt, hook_event_name: "UserPromptSubmit" });
-}
-
 // Writes a synthetic index.json for `find --index`. Deliberately untyped
 // (`any`): some tests hand it index records that don't conform to
 // IndexRecord on purpose, to reproduce a corrupted/hand-edited index.json.
@@ -96,196 +92,28 @@ function writeIndex(home: string, skills: any[], filename = "index.json"): strin
 }
 
 describe("route end-to-end (stubbed skills CLI)", () => {
-  it("installs an allowlisted skill, asks about an unknown publisher, logs everything", async () => {
-    const home = freshHome("route");
-    const project = path.join(home, "proj");
-    fs.mkdirSync(project);
-    fs.writeFileSync(path.join(project, "package.json"), "{}");
-
+  it("emits nothing and logs the prompt, whatever language it is in", async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "ms-route-"));
     const r = await runCli(["route"], {
       home,
-      input: hookInput("export the report to xlsx with formulas and conditional formatting", project),
+      input: JSON.stringify({ session_id: "s", cwd: home, user_prompt: "напиши тесты для роутера" }),
     });
-    expect(r.code).toBe(0);
-
-    const out = JSON.parse(r.stdout) as { hookSpecificOutput: { hookEventName: string; additionalContext: string } };
-    expect(out.hookSpecificOutput.hookEventName).toBe("UserPromptSubmit");
-    const ctx = out.hookSpecificOutput.additionalContext;
-    expect(ctx).toContain("[metaskill] Domains:");
-    expect(ctx).toContain("xlsx");
-    expect(ctx).toContain("Installed now: anthropics/skills@xlsx (v1.2.3)");
-    expect(ctx).toContain(`${path.join("skills", "xlsx", "SKILL.md")}`);
-    // node domain (from stack) resolved to a non-allowlisted registry package -> ask
-    expect(ctx).toContain("Needs confirmation: modelscope.cn@node-helper (410 installs");
-    expect(ctx.length).toBeLessThanOrEqual(600);
-
-    // physical install through the stub: agents dir + symlink into ~/.claude
-    expect(fs.existsSync(path.join(home, ".claude", "skills", "xlsx", "SKILL.md"))).toBe(true);
-
-    const lock = readLockFile(home);
-    expect(lock["anthropics/skills@xlsx"]).toMatchObject({ skill: "xlsx", version: "1.2.3" });
-    expect(lock["modelscope.cn@node-helper"]).toBeUndefined(); // ask never installs
-
+    expect(r.stdout.trim()).toBe("");
     const log = fs
       .readFileSync(path.join(home, ".metaskill", "log.jsonl"), "utf8")
-      .trim()
-      .split("\n")
-      .map((l) => JSON.parse(l));
-    expect(log).toHaveLength(1);
-    expect(log[0].domains).toContain("xlsx");
-    expect(log[0].domains).toContain("node");
-    expect(log[0].installed).toEqual(["anthropics/skills@xlsx"]);
-    expect(log[0].prompt_hash).toMatch(/^sha256:/);
-    const decisions = Object.fromEntries(log[0].discovered.map((d: any) => [d.pkg, d.decision]));
-    expect(decisions["anthropics/skills@xlsx"]).toBe("auto");
-    expect(decisions["modelscope.cn@node-helper"]).toBe("ask");
-
-    // Second identical prompt: covered via domainMap + discovery cache.
-    const addsBefore = stubCalls(home).filter((c) => c[0] === "add").length;
-    const findsBefore = stubCalls(home).filter((c) => c[0] === "find").length;
-    const r2 = await runCli(["route"], {
-      home,
-      input: hookInput("export the report to xlsx with formulas and conditional formatting", project),
-    });
-    const ctx2 = (JSON.parse(r2.stdout) as any).hookSpecificOutput.additionalContext as string;
-    expect(ctx2).toContain("Already present: xlsx");
-    expect(ctx2).not.toContain("Installed now:");
-    expect(stubCalls(home).filter((c) => c[0] === "add").length).toBe(addsBefore); // no reinstall
-    expect(stubCalls(home).filter((c) => c[0] === "find").length).toBe(findsBefore); // cache hit
-    expect(r2.ms, `cache-hit route took ${r2.ms}ms`).toBeLessThan(1500); // spec 4.2 budget
-
-    fs.rmSync(home, { recursive: true, force: true });
-  });
-
-  it("trivial prompt: no output, no log, no skills CLI calls", async () => {
-    const home = freshHome("trivial");
-    const r = await runCli(["route"], { home, input: hookInput("hi", home) });
-    expect(r.code).toBe(0);
-    expect(r.stdout).toBe("");
-    expect(fs.existsSync(path.join(home, ".metaskill", "log.jsonl"))).toBe(false);
-    expect(stubCalls(home)).toEqual([]);
-    fs.rmSync(home, { recursive: true, force: true });
-  });
-
-  it("no candidates: solves silently, logs the coverage gap (legacy `prompt` stdin field)", async () => {
-    const home = freshHome("gap");
-    const r = await runCli(["route"], { home, input: hookInput("convert this docx to pdf", home, "prompt") });
-    expect(r.code).toBe(0);
-    expect(r.stdout).toBe(""); // report nothing (spec 4.8)
-    const log = fs
-      .readFileSync(path.join(home, ".metaskill", "log.jsonl"), "utf8")
-      .trim()
-      .split("\n")
-      .map((l) => JSON.parse(l));
-    expect(log[0].domains.sort()).toEqual(["docx", "pdf"]);
-    expect(log[0].discovered).toEqual([]);
-    expect(log[0].installed).toEqual([]);
-    fs.rmSync(home, { recursive: true, force: true });
-  });
-
-  it("install timeout downgrades to ask (spec 4.2.6)", async () => {
-    const home = freshHome("timeout");
-    const r = await runCli(["route"], {
-      home,
-      input: hookInput("export the report to xlsx with formulas", home),
-      env: { METASKILL_INSTALL_TIMEOUT_MS: "500", STUB_ADD_SLEEP_MS: "5000" },
-    });
-    const ctx = (JSON.parse(r.stdout) as any).hookSpecificOutput.additionalContext as string;
-    expect(ctx).toContain("Needs confirmation: anthropics/skills@xlsx");
-    expect(ctx).toContain("install timed out");
-    expect(readLockFile(home)).toEqual({});
-    fs.rmSync(home, { recursive: true, force: true });
-  });
-
-  it("classification miss: logs it and asks the in-session model to classify (no API key needed)", async () => {
-    const home = freshHome("miss");
-    const r = await runCli(["route"], {
-      home,
-      input: hookInput("please figure out why everything broke yesterday evening and what changed", home),
-    });
-    expect(r.code).toBe(0);
-    const out = JSON.parse(r.stdout) as { hookSpecificOutput: { additionalContext: string } };
-    const ctx = out.hookSpecificOutput.additionalContext;
-    expect(ctx).toContain("Task not classified");
-    expect(ctx).toContain('route --search'); // model derives the capability phrase itself
-    expect(ctx.length).toBeLessThanOrEqual(600);
-    const log = fs
-      .readFileSync(path.join(home, ".metaskill", "log.jsonl"), "utf8")
-      .trim()
-      .split("\n")
-      .map((l) => JSON.parse(l));
+      .trim().split("\n").map((l) => JSON.parse(l));
     expect(log).toHaveLength(1);
     expect(log[0].domains).toEqual([]);
+    expect(log[0].prompt_hash).toMatch(/^sha256:/);
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  it("route --search: free registry search through the same policy path", async () => {
-    const home = freshHome("search");
-    // allowlisted top candidate -> auto-install, plain output
-    const auto = await runCli(["route", "--search", "xlsx spreadsheets"], { home });
-    expect(auto.code).toBe(0);
-    expect(auto.stdout).toContain("Installed now: anthropics/skills@xlsx");
-    expect(readLockFile(home)["anthropics/skills@xlsx"]).toBeTruthy();
-
-    // unknown publisher, unscannable -> ask, never auto (146K installs is not enough)
-    const ask = await runCli(["route", "--search", "Reddit Automation!!"], { home });
-    expect(ask.code).toBe(0);
-    expect(ask.stdout).toContain("Needs confirmation: modelscope.cn@reddit-helper (146100 installs");
-    expect(readLockFile(home)["modelscope.cn@reddit-helper"]).toBeUndefined();
-
-    // nothing found -> says so, still exit 0
-    const none = await runCli(["route", "--search", "totally unknown capability"], { home });
-    expect(none.stdout).toContain("No skills found");
-
-    // reinstall protection: repeating the search hits the installed skill
-    // by query words, before any registry call
-    const findsBefore = stubCalls(home).filter((c) => c[0] === "find").length;
-    const again = await runCli(["route", "--search", "xlsx spreadsheets"], { home });
-    expect(again.stdout).toContain("Already present: xlsx");
-    expect(stubCalls(home).filter((c) => c[0] === "find").length).toBe(findsBefore);
-
-    // logged with search: prefix, prompt text never stored
-    const log = fs
-      .readFileSync(path.join(home, ".metaskill", "log.jsonl"), "utf8")
-      .trim()
-      .split("\n")
-      .map((l) => JSON.parse(l));
-    expect(log.map((e) => e.domains[0])).toEqual([
-      "search:xlsx spreadsheets",
-      "search:reddit automation",
-      "search:totally unknown capability",
-      "search:xlsx spreadsheets",
-    ]);
-    expect(log[3].covered).toEqual(["xlsx"]);
-    fs.rmSync(home, { recursive: true, force: true });
-  });
-
-  it("route --domains: model-side classification installs through the same policy path", async () => {
-    const home = freshHome("domains");
-    const r = await runCli(["route", "--domains", "xlsx"], { home });
-    expect(r.code).toBe(0);
-    expect(r.stdout).toContain("[metaskill] Domains: xlsx.");
-    expect(r.stdout).toContain("Installed now: anthropics/skills@xlsx");
-    expect(r.stdout).not.toContain("hookSpecificOutput"); // plain text, not hook JSON
-    expect(readLockFile(home)["anthropics/skills@xlsx"]).toBeTruthy();
-
-    const bad = await runCli(["route", "--domains", "nonsense"], { home });
-    expect(bad.code).toBe(2);
-    fs.rmSync(home, { recursive: true, force: true });
-  });
-
-  it("system traffic (notifications, command output) never triggers installs", async () => {
-    const home = freshHome("systraffic");
-    const r = await runCli(["route"], {
+  it("still ignores system traffic", async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "ms-route-sys-"));
+    await runCli(["route"], {
       home,
-      input: hookInput(
-        "[SYSTEM NOTIFICATION - NOT USER INPUT]\n<task-notification>report: pdf 185K, xlsx 158K, python 149K installs</task-notification>",
-        home,
-      ),
+      input: JSON.stringify({ session_id: "s", cwd: home, user_prompt: "<system-reminder>pdf</system-reminder>" }),
     });
-    expect(r.code).toBe(0);
-    expect(r.stdout).toBe("");
-    expect(stubCalls(home)).toEqual([]); // no find, no add
     expect(fs.existsSync(path.join(home, ".metaskill", "log.jsonl"))).toBe(false);
     fs.rmSync(home, { recursive: true, force: true });
   });
@@ -723,7 +551,9 @@ describe("list command", () => {
     expect(empty.code).toBe(0);
     expect(empty.stdout).toContain("hasn't installed anything yet");
 
-    await runCli(["route"], { home, input: hookInput("export the report to xlsx with formulas", home) });
+    // route no longer installs anything itself (it only logs); seed the same
+    // on-disk state `install` would have produced as a side effect before.
+    await runCli(["install", "anthropics/skills@xlsx", "--domain", "xlsx"], { home });
     const r = await runCli(["list"], { home });
     expect(r.stdout).toMatch(/SKILL\s+PACKAGE\s+VERSION\s+DOMAIN\s+INSTALLED\s+STATUS/);
     expect(r.stdout).toContain("anthropics/skills@xlsx");

@@ -5,31 +5,12 @@ description: Protocol for handling the [metaskill] block in context. Use in ever
 
 # metaskill protocol
 
-metaskill injects `[metaskill]` blocks into your context from two hooks: a
-SessionStart block carrying the standing `find` protocol, and a
-UserPromptSubmit block naming skills it classified, auto-installed, or wants
-confirmation for. Those blocks are self-contained — this skill is the longer
-reference for the same rules, not the only place they live.
-
-## Reading the `[metaskill]` block
-
-```
-[metaskill] Domains: xlsx, python.
-Installed now: anthropics/skills@xlsx (v2026.07.1) → ~/.claude/skills/xlsx/SKILL.md
-Already present: python-best-practices
-Needs confirmation: foo/bar@xlsx-charts (410 installs, publisher foo not allowlisted) — ask the user one question before using it.
-Skipped by policy: 1 (see metaskill log).
-```
-
-- **Domains** — what metaskill thinks the task needs. If it misclassified,
-  just solve the task; do not install anything to compensate.
-- **Installed now** — the skill is already on disk at the given path. Read its
-  SKILL.md and follow it directly. Do not paraphrase or reimplement what the
-  skill already provides.
-- **Already present** — same: use the installed skill via its SKILL.md.
-- **Needs confirmation** — see below.
-- **Skipped by policy** — a candidate was denied. Do not try to get it another
-  way; mention it only if the user asks.
+metaskill injects one `[metaskill]` block into your context, from a
+SessionStart hook: a standing protocol naming a `find` command. That block is
+self-contained — this skill is the longer reference for the same rules, not
+the only place they live. Running `find` prints its own `[metaskill]` line
+naming what it found, installed, or wants confirmation for (see "On `find`"
+below); UserPromptSubmit no longer classifies or prints anything.
 
 ## On "Needs confirmation"
 

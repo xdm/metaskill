@@ -7,7 +7,7 @@ describe("settings hooks merge (spec 4.1)", () => {
     const ups = s.hooks!.UserPromptSubmit!;
     expect(ups).toHaveLength(1);
     expect(ups[0]!.hooks![0]!.command).toBe(hookCommand("route"));
-    expect(ups[0]!.hooks![0]!.timeout).toBe(90);
+    expect(ups[0]!.hooks![0]!.timeout).toBe(10);
     expect(ups[0]!.matcher).toBeUndefined(); // UserPromptSubmit has no matcher support
     const ss = s.hooks!.SessionStart!;
     expect(ss[0]!.matcher).toBe("startup|resume|clear|compact");

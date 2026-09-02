@@ -8,9 +8,7 @@ Usage: metaskill <command> [options]
 
 Commands:
   init [--project] [--uninstall]   Register/remove Claude Code hooks, policy, SKILL.md
-  route [--domains a,b]            UserPromptSubmit hook body (stdin JSON), or
-        [--search "words"]         explicit-domain / free registry search runs
-                                   for in-session classification by the model
+  route                            UserPromptSubmit hook body (stdin JSON): logs the prompt
   find "<words>"   find a skill for a capability
   sync [--force]                   SessionStart hook body: daily update of allowlisted skills
   install <pkg> [--domain d] [--force]   Install one skill through policy + scan
@@ -32,7 +30,7 @@ function parseArgs(argv: string[]): Args {
   const pos: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (a === "--domain" || a === "--domains" || a === "--search" || a === "--index" || a === "-n") {
+    if (a === "--domain" || a === "--index" || a === "-n") {
       flags[a === "-n" ? "n" : a.slice(2)] = argv[++i] ?? "";
     } else if (a.startsWith("--")) {
       flags[a.slice(2)] = true;
@@ -77,12 +75,7 @@ async function main(): Promise<number> {
     }
     case "route": {
       const { routeCommand } = await import("./commands/route.js");
-      const domains =
-        typeof flags.domains === "string"
-          ? flags.domains.split(",").map((d) => d.trim()).filter(Boolean)
-          : undefined;
-      const search = typeof flags.search === "string" ? flags.search : undefined;
-      return routeCommand(domains || search !== undefined ? "" : await readStdin(), { domains, search });
+      return routeCommand(await readStdin());
     }
     case "find": {
       const { findCommand } = await import("./commands/find.js");

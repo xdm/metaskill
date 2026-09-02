@@ -6,7 +6,7 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/cli.js\" route",
-            "timeout": 90
+            "timeout": 10
           }
         ]
       }

@@ -53,9 +53,11 @@ export function addHooks(settings: Settings): Settings {
   settings.hooks ??= {};
   settings.hooks.UserPromptSubmit ??= [];
   // UserPromptSubmit supports no matcher (verified against current docs).
-  // 90s, not the 30s default: worst case is discovery (10s) + scan + 20s
-  // install — a 30s kill can land after the install but before the log line.
-  upsert(settings.hooks.UserPromptSubmit, "route", undefined, 90);
+  // 10s, not 90: route no longer classifies, discovers, scans or installs —
+  // it only parses stdin and appends one log line — so nothing on this path
+  // touches the network, and the old discovery+scan+install budget no longer
+  // applies.
+  upsert(settings.hooks.UserPromptSubmit, "route", undefined, 10);
   settings.hooks.SessionStart ??= [];
   // `clear` and `compact`: a session that loses its injected context and does
   // not get the protocol back spends the rest of its life without one. That is
