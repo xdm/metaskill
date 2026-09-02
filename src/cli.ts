@@ -15,7 +15,7 @@ Commands:
   update [names...] [--force]      Update installed skills (allowlist without --force)
   list                             Show what metaskill has installed (alias: ls)
   plugins [words]                  Search Claude Code plugin marketplaces (suggest only)
-  log [-n N]                       Show recent routing decisions
+  log [-n N] [--stats]             Show recent routing decisions, or find follow-through
 
 Files: ~/.metaskill/{metaskill.yaml,cache.json,skills-lock.json,log.jsonl}
 `;
@@ -105,7 +105,7 @@ async function main(): Promise<number> {
     case "log": {
       const { logCommand } = await import("./commands/log.js");
       const n = typeof flags.n === "string" ? parseInt(flags.n, 10) || 20 : 20;
-      return logCommand(n);
+      return logCommand(n, { stats: flags.stats === true });
     }
     case "--version":
     case "-v":
