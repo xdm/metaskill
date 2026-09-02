@@ -7,7 +7,6 @@ import type { Candidate, Policy, PolicyDecision, ScanResult } from "./types.js";
 export function defaultPolicy(): Policy {
   return {
     version: 1,
-    classifier: { trivialMaxChars: 40 },
     trust: {
       allowlist: ["anthropics", "vercel-labs"],
       autoThreshold: { minInstalls: 5000, requireCleanScan: true },
@@ -18,8 +17,6 @@ export function defaultPolicy(): Policy {
       denyIfContains: ["hooks/", ".mcp.json", "curl ", "wget ", "eval(", "process.env", "os.environ"],
       maxArchiveKb: 2048,
     },
-    domains: {},
-    customDomains: [],
     log: { path: defaultLogPath(), retentionDays: 90 },
   };
 }
@@ -41,9 +38,6 @@ export function loadPolicy(): Policy {
   }
   try {
     const y = (YAML.parse(raw) ?? {}) as Record<string, any>;
-    const c = y.classifier ?? {};
-    if (typeof c.trivial_max_chars === "number") p.classifier.trivialMaxChars = c.trivial_max_chars;
-
     const t = y.trust ?? {};
     if (Array.isArray(t.allowlist)) p.trust.allowlist = t.allowlist.map(String);
     if (Array.isArray(t.deny_skills)) p.trust.denySkills = t.deny_skills.map(String);
@@ -55,21 +49,6 @@ export function loadPolicy(): Policy {
     const s = y.scan ?? {};
     if (Array.isArray(s.deny_if_contains)) p.scan.denyIfContains = s.deny_if_contains.map(String);
     if (typeof s.max_archive_kb === "number") p.scan.maxArchiveKb = s.max_archive_kb;
-
-    if (y.domains && typeof y.domains === "object" && !Array.isArray(y.domains)) {
-      p.domains = Object.fromEntries(Object.entries(y.domains).map(([k, v]) => [k, String(v)]));
-    }
-
-    if (Array.isArray(y.custom_domains)) {
-      p.customDomains = y.custom_domains
-        .filter((d: any) => d && typeof d.id === "string" && /^[a-z0-9-]{2,32}$/.test(d.id))
-        .map((d: any) => ({
-          id: d.id,
-          keywords: Array.isArray(d.keywords) ? d.keywords.map(String) : [],
-          extensions: Array.isArray(d.extensions) ? d.extensions.map(String) : [],
-          query: typeof d.query === "string" && d.query.trim() ? d.query : d.id,
-        }));
-    }
 
     const l = y.log ?? {};
     if (typeof l.path === "string") p.log.path = expandHome(l.path);

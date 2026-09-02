@@ -131,7 +131,6 @@ describe("policy.loadPolicy", () => {
   it("returns defaults when no policy file exists", () => {
     const p = loadPolicy();
     expect(p.trust.allowlist).toContain("anthropics");
-    expect(p.classifier.trivialMaxChars).toBe(40);
   });
 
   it("parses the shipped template shape (snake_case)", () => {
@@ -139,8 +138,6 @@ describe("policy.loadPolicy", () => {
       path.join(home, "metaskill.yaml"),
       [
         "version: 1",
-        "classifier:",
-        "  trivial_max_chars: 25",
         "trust:",
         "  allowlist: [me]",
         "  auto_threshold:",
@@ -150,21 +147,17 @@ describe("policy.loadPolicy", () => {
         "scan:",
         "  deny_if_contains: ['rm -rf']",
         "  max_archive_kb: 64",
-        "domains:",
-        "  scraping: me/skills@crawler",
         "log:",
         "  path: ~/custom/log.jsonl",
         "  retention_days: 7",
       ].join("\n"),
     );
     const p = loadPolicy();
-    expect(p.classifier.trivialMaxChars).toBe(25);
     expect(p.trust.allowlist).toEqual(["me"]);
     expect(p.trust.autoThreshold).toEqual({ minInstalls: 100, requireCleanScan: false });
     expect(p.trust.denyPublishers).toEqual(["evil"]);
     expect(p.scan.denyIfContains).toEqual(["rm -rf"]);
     expect(p.scan.maxArchiveKb).toBe(64);
-    expect(p.domains.scraping).toBe("me/skills@crawler");
     expect(p.log.path).toBe(path.join(os.homedir(), "custom/log.jsonl"));
     expect(p.log.retentionDays).toBe(7);
   });
@@ -177,7 +170,7 @@ describe("policy.loadPolicy", () => {
     expect(loadPolicy().trust.denySkills).toEqual(["bad/repo@thing"]);
   });
 
-  it("ignores the retired classifier.llm/model keys from older configs", () => {
+  it("loads a v1 config carrying every retired section", () => {
     fs.writeFileSync(
       path.join(home, "metaskill.yaml"),
       [
@@ -186,30 +179,20 @@ describe("policy.loadPolicy", () => {
         "  llm: always",
         "  model: claude-haiku-4-5",
         "  trivial_max_chars: 25",
-      ].join("\n"),
-    );
-    const p = loadPolicy();
-    expect(p.classifier).toEqual({ trivialMaxChars: 25 });
-  });
-
-  it("parses custom_domains and drops malformed entries", () => {
-    fs.writeFileSync(
-      path.join(home, "metaskill.yaml"),
-      [
+        "domains:",
+        "  bitrix24: xdm/skills@bitrix24-rest",
         "custom_domains:",
         "  - id: wordpress",
-        "    keywords: [wordpress, woocommerce]",
+        "    keywords: [wordpress]",
         "    query: wordpress",
-        "  - id: 'BAD ID!'", // invalid id -> dropped
-        "    keywords: [x]",
-        "  - id: notion", // query defaults to the id
+        "trust:",
+        "  allowlist: [me]",
       ].join("\n"),
     );
     const p = loadPolicy();
-    expect(p.customDomains).toEqual([
-      { id: "wordpress", keywords: ["wordpress", "woocommerce"], extensions: [], query: "wordpress" },
-      { id: "notion", keywords: [], extensions: [], query: "notion" },
-    ]);
+    expect(p.trust.allowlist).toEqual(["me"]);
+    expect(p).not.toHaveProperty("classifier");
+    expect(p).not.toHaveProperty("domains");
   });
 
   it("falls back to defaults on broken yaml", () => {
@@ -223,6 +206,5 @@ describe("policy.loadPolicy", () => {
     expect(p.trust.allowlist).toEqual(["anthropics", "vercel-labs"]);
     expect(p.trust.autoThreshold).toEqual({ minInstalls: 5000, requireCleanScan: true });
     expect(p.scan.denyIfContains).toContain("hooks/");
-    expect(p.domains).toEqual({});
   });
 });

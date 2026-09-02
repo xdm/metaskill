@@ -41,7 +41,11 @@ export function blockedByScan(index: IndexFile | null, pkg: string): string | nu
   if (!index) return null;
   const r = findByPkg(index, pkg);
   if (!r || r.scan !== "dirty") return null;
-  return r.scanFindings[0] ?? "dirty";
+  // Same corruption risk find.ts's scanFromIndex guards against: the type
+  // says string[], but loadIndex/readOne never validates a record's shape,
+  // so a hand-edited or corrupted index.json can carry scanFindings as null
+  // or omit it — indexing [0] on either throws instead of reporting "dirty".
+  return Array.isArray(r.scanFindings) ? r.scanFindings[0] ?? "dirty" : "dirty";
 }
 
 // Manual `metaskill update [names...]` (spec 4.4). Same trust rules as sync:

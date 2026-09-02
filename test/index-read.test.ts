@@ -1,8 +1,9 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { findByPkg, search, tokenize } from "../src/index/read.js";
+import { findByPkg, loadIndex, search, snapshotPath, tokenize } from "../src/index/read.js";
 import type { IndexFile } from "../src/index/types.js";
 
 const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures/index-sample.json");
@@ -66,6 +67,34 @@ describe("search", () => {
     const rare = search(index, "kubernetes", 1);
     const common = search(index, "the and for", 1);
     if (rare.length && common.length) expect(rare[0]!.score).toBeGreaterThan(common[0]!.score);
+  });
+});
+
+describe("loadIndex: METASKILL_INDEX test isolation", () => {
+  it("a missing METASKILL_INDEX path returns null even when a real snapshot exists at packageRoot()", () => {
+    const snap = snapshotPath();
+    const hadSnapshot = fs.existsSync(snap);
+    const original = hadSnapshot ? fs.readFileSync(snap, "utf8") : null;
+    fs.writeFileSync(snap, JSON.stringify(index)); // a real, valid snapshot — proves it is never even opened
+
+    const savedIndex = process.env.METASKILL_INDEX;
+    const savedHome = process.env.METASKILL_HOME;
+    process.env.METASKILL_INDEX = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), "metaskill-noindex-")),
+      "does-not-exist.json",
+    );
+    delete process.env.METASKILL_HOME; // rule out a stray ~/.metaskill/index.json too
+
+    try {
+      expect(loadIndex()).toBeNull();
+    } finally {
+      if (original !== null) fs.writeFileSync(snap, original);
+      else fs.rmSync(snap, { force: true });
+      if (savedIndex === undefined) delete process.env.METASKILL_INDEX;
+      else process.env.METASKILL_INDEX = savedIndex;
+      if (savedHome === undefined) delete process.env.METASKILL_HOME;
+      else process.env.METASKILL_HOME = savedHome;
+    }
   });
 });
 

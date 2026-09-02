@@ -27,4 +27,22 @@ describe("blockedByScan", () => {
   it("allows when there is no index at all", () => {
     expect(blockedByScan(null, "anthropics/skills@x")).toBeNull();
   });
+
+  // loadIndex/readOne never validates a record's shape (only that `skills` is
+  // an array), so a hand-edited or corrupted index.json can carry a dirty
+  // record whose scanFindings is null or missing entirely. That must still
+  // block the update — with the generic "dirty" reason — not throw.
+  it("blocks with the generic reason instead of throwing when scanFindings is null", () => {
+    const corrupt = idx("dirty");
+    (corrupt.skills[0] as any).scanFindings = null;
+    expect(() => blockedByScan(corrupt, "anthropics/skills@x")).not.toThrow();
+    expect(blockedByScan(corrupt, "anthropics/skills@x")).toBe("dirty");
+  });
+
+  it("blocks with the generic reason instead of throwing when scanFindings is missing", () => {
+    const corrupt = idx("dirty");
+    delete (corrupt.skills[0] as any).scanFindings;
+    expect(() => blockedByScan(corrupt, "anthropics/skills@x")).not.toThrow();
+    expect(blockedByScan(corrupt, "anthropics/skills@x")).toBe("dirty");
+  });
 });

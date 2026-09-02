@@ -11,7 +11,7 @@ Commands:
   route                            UserPromptSubmit hook body (stdin JSON): logs the prompt
   find "<words>"   find a skill for a capability
   sync [--force]                   SessionStart hook body: daily update of allowlisted skills
-  install <pkg> [--domain d] [--force]   Install one skill through policy + scan
+  install <pkg> [--force]          Install one skill through policy + scan
   update [names...] [--force]      Update installed skills (allowlist without --force)
   list                             Show what metaskill has installed (alias: ls)
   plugins [words]                  Search Claude Code plugin marketplaces (suggest only)
@@ -30,7 +30,7 @@ function parseArgs(argv: string[]): Args {
   const pos: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (a === "--domain" || a === "--index" || a === "-n") {
+    if (a === "--index" || a === "-n") {
       flags[a === "-n" ? "n" : a.slice(2)] = argv[++i] ?? "";
     } else if (a.startsWith("--")) {
       flags[a.slice(2)] = true;
@@ -87,10 +87,7 @@ async function main(): Promise<number> {
     }
     case "install": {
       const { installCommand } = await import("./commands/install.js");
-      return installCommand(pos[0], {
-        force: flags.force === true,
-        domain: typeof flags.domain === "string" ? flags.domain : undefined,
-      });
+      return installCommand(pos[0], { force: flags.force === true });
     }
     case "update": {
       const { updateCommand } = await import("./commands/update.js");

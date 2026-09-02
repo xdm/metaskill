@@ -3,9 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readCache, writeCache } from "../src/cache.js";
-import { coverage, listInstalledSkills } from "../src/inventory.js";
+import { listInstalledSkills } from "../src/inventory.js";
 import { addLockEntry, readLock } from "../src/lock.js";
-import { defaultPolicy } from "../src/policy.js";
 import { readState, writeState } from "../src/state.js";
 
 let home: string;
@@ -58,31 +57,13 @@ describe("inventory (spec 4.2.3)", () => {
     const skills = listInstalledSkills(project);
     expect(skills.map((s) => s.name)).toContain("broken"); // falls back to dir name
   });
-
-  it("coverage: policy override, domainMap, exact and substring name matches", () => {
-    addSkill(path.join(home, ".claude", "skills"), "xlsx");
-    addSkill(path.join(home, ".claude", "skills"), "python-best-practices");
-    addSkill(path.join(home, ".claude", "skills"), "company-crawler");
-    const installed = listInstalledSkills(project);
-    const policy = defaultPolicy();
-    policy.domains.scraping = "mycompany/skills@company-crawler";
-    const cache = { domainMap: { docker: "python-best-practices" }, discovery: {} };
-    const cov = coverage(["xlsx", "python", "scraping", "docker", "seo"], installed, policy, cache);
-    expect(cov.covered).toEqual({
-      xlsx: "xlsx", // exact name
-      python: "python-best-practices", // substring
-      scraping: "company-crawler", // policy override
-      docker: "python-best-practices", // domainMap
-    });
-    expect(cov.uncovered).toEqual(["seo"]);
-  });
 });
 
 describe("stores round-trip", () => {
   it("cache, lock and state read back what was written; missing files -> empty", () => {
-    expect(readCache()).toEqual({ domainMap: {}, discovery: {} });
-    writeCache({ domainMap: { xlsx: "xlsx" }, discovery: {} });
-    expect(readCache().domainMap.xlsx).toBe("xlsx");
+    expect(readCache()).toEqual({ discovery: {} });
+    writeCache({ discovery: { xlsx: { ts: "2026-08-26T00:00:00Z", candidates: [] } } });
+    expect(readCache().discovery.xlsx?.ts).toBe("2026-08-26T00:00:00Z");
 
     expect(readLock()).toEqual({});
     addLockEntry({ pkg: "a/b@c", skill: "c", installedAt: "2026-08-26T00:00:00Z", version: "1" });

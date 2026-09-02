@@ -24,7 +24,7 @@ export function listCommand(): number {
     status: locateInstalled(e.skill) ? "ok" : "MISSING (removed?)",
   }));
 
-  const headers = { skill: "SKILL", pkg: "PACKAGE", version: "VERSION", domain: "DOMAIN", date: "INSTALLED", status: "STATUS" };
+  const headers = { skill: "SKILL", pkg: "PACKAGE", version: "VERSION", domain: "MATCHED", date: "INSTALLED", status: "STATUS" };
   const cols = Object.keys(headers) as (keyof typeof headers)[];
   const width = (c: (typeof cols)[number]) =>
     Math.max(headers[c].length, ...rows.map((r) => r[c].length));

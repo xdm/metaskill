@@ -153,7 +153,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
 
     const auto = rows.find((x) => x.v.decision === "auto");
     if (auto) {
-      const res = await installSkill(auto.r.pkg, undefined);
+      const res = await installSkill(auto.r.pkg, q);
       if (res.ok) {
         process.stdout.write(
           `[metaskill] Installed now: ${auto.r.pkg}${res.version ? ` (v${res.version})` : ""}${res.skillMdPath ? ` -> ${res.skillMdPath}` : ""}\n` +

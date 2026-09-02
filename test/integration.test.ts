@@ -33,6 +33,17 @@ function runCli(
         // network — `sync` would otherwise download the real ~23.8MB index
         // release on every run. See refresh.ts.
         METASKILL_SKIP_INDEX_REFRESH: "1",
+        // loadIndex()'s default lookup (no --index) is indexPath() then
+        // snapshotPath() — and snapshotPath() sits under the real package
+        // root, outside this sandbox, so a developer's locally-built
+        // index-snapshot.json would otherwise leak into every spawned CLI's
+        // result. Pointing METASKILL_INDEX at the same path indexPath()
+        // already computes keeps every test that seeds `.metaskill/index.json`
+        // working unchanged, while any test that seeds nothing there
+        // deterministically gets no index instead of a developer's real one.
+        // Tests that need a specific index still pass --index explicitly,
+        // which loadIndex() honors ahead of this variable.
+        METASKILL_INDEX: path.join(opts.home, ".metaskill", "index.json"),
         ...opts.env,
       },
     });
@@ -63,7 +74,7 @@ function stubCalls(home: string): string[][] {
   }
 }
 
-function readLockFile(home: string): Record<string, { skill: string; version?: string }> {
+function readLockFile(home: string): Record<string, { skill: string; version?: string; domain?: string }> {
   try {
     return JSON.parse(fs.readFileSync(path.join(home, ".metaskill", "skills-lock.json"), "utf8"));
   } catch {
@@ -209,7 +220,17 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     expect(r.stdout).toContain("Installed now: anthropics/skills@gizmo");
     expect(r.stdout).toContain("Read that SKILL.md and follow it.");
     expect(fs.existsSync(path.join(home, ".claude", "skills", "gizmo", "SKILL.md"))).toBe(true);
-    expect(readLockFile(home)["anthropics/skills@gizmo"]).toMatchObject({ skill: "gizmo", version: "1.2.3" });
+    // The lock's `domain` is the query phrase that found it — find.ts's own
+    // record of what matched, which `metaskill list` later shows under
+    // MATCHED. Nothing downstream reads it back to make a decision.
+    expect(readLockFile(home)["anthropics/skills@gizmo"]).toMatchObject({
+      skill: "gizmo",
+      version: "1.2.3",
+      domain: "gizmo automation",
+    });
+    const listed = await runCli(["list"], { home });
+    expect(listed.stdout).toMatch(/SKILL\s+PACKAGE\s+VERSION\s+MATCHED\s+INSTALLED\s+STATUS/);
+    expect(listed.stdout).toContain("gizmo automation");
     fs.rmSync(home, { recursive: true, force: true });
   });
 
@@ -649,9 +670,11 @@ describe("list command", () => {
 
     // route no longer installs anything itself (it only logs); seed the same
     // on-disk state `install` would have produced as a side effect before.
-    await runCli(["install", "anthropics/skills@xlsx", "--domain", "xlsx"], { home });
+    // Manual install has no --domain flag any more — no query phrase to
+    // record — so this entry's MATCHED column renders "-".
+    await runCli(["install", "anthropics/skills@xlsx"], { home });
     const r = await runCli(["list"], { home });
-    expect(r.stdout).toMatch(/SKILL\s+PACKAGE\s+VERSION\s+DOMAIN\s+INSTALLED\s+STATUS/);
+    expect(r.stdout).toMatch(/SKILL\s+PACKAGE\s+VERSION\s+MATCHED\s+INSTALLED\s+STATUS/);
     expect(r.stdout).toContain("anthropics/skills@xlsx");
     expect(r.stdout).toContain("v1.2.3");
     expect(r.stdout).toMatch(/^xlsx\s+.*\bok$/m);
@@ -664,6 +687,32 @@ describe("list command", () => {
     fs.rmSync(path.join(home, ".claude", "skills", "xlsx"), { recursive: true, force: true });
     const gone = await runCli(["list"], { home });
     expect(gone.stdout).toContain("MISSING");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  // Backward compat: a lock written by an older metaskill version carries
+  // `domain` as a taxonomy id (e.g. "xlsx"), not a query phrase. list must
+  // not crash on it, and must show it under the renamed MATCHED column —
+  // both are equally "what matched" from the reader's point of view.
+  it("renders an old lock entry's domain value under MATCHED", async () => {
+    const home = freshHome("list-oldlock");
+    fs.mkdirSync(path.join(home, ".metaskill"), { recursive: true });
+    fs.writeFileSync(
+      path.join(home, ".metaskill", "skills-lock.json"),
+      JSON.stringify({
+        "anthropics/skills@xlsx": {
+          pkg: "anthropics/skills@xlsx",
+          skill: "xlsx",
+          installedAt: "2026-08-01T00:00:00Z",
+          version: "1.2.3",
+          domain: "xlsx",
+        },
+      }),
+    );
+    const r = await runCli(["list"], { home });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toMatch(/SKILL\s+PACKAGE\s+VERSION\s+MATCHED\s+INSTALLED\s+STATUS/);
+    expect(r.stdout).toMatch(/^xlsx\s+anthropics\/skills@xlsx\s+v1\.2\.3\s+xlsx\s+/m);
     fs.rmSync(home, { recursive: true, force: true });
   });
 });

@@ -6,7 +6,6 @@ import type { Candidate, ScanResult } from "../types.js";
 
 export interface InstallFlags {
   force?: boolean;
-  domain?: string;
 }
 
 // Manual `metaskill install <pkg>`: same policy and scan as the automatic
@@ -14,7 +13,7 @@ export interface InstallFlags {
 // any flag, on this path or the automatic one.
 export async function installCommand(pkg: string | undefined, flags: InstallFlags): Promise<number> {
   if (!pkg) {
-    process.stderr.write("usage: metaskill install <owner/repo@skill> [--domain <domain>] [--force]\n");
+    process.stderr.write("usage: metaskill install <owner/repo@skill> [--force]\n");
     return 2;
   }
   const policy = loadPolicy();
@@ -49,7 +48,7 @@ export async function installCommand(pkg: string | undefined, flags: InstallFlag
     return 1;
   }
 
-  const res = await installSkill(pkg, flags.domain, { timeoutMs: 120_000 });
+  const res = await installSkill(pkg, undefined, { timeoutMs: 120_000 });
   if (!res.ok) {
     process.stderr.write(`install failed: ${res.error ?? "unknown error"}\n`);
     return 1;

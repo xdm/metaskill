@@ -1,7 +1,4 @@
 version: 1
-classifier:
-  trivial_max_chars: 40   # shorter than this with no domain hit = trivial
-
 trust:
   allowlist:         # auto-install and auto-update
     - anthropics
@@ -22,14 +19,6 @@ scan:                # forbidden outside the allowlist
     - "process.env"
     - "os.environ"
   max_archive_kb: 2048
-
-domains: {}          # manual overrides: domain -> skill
-                     # e.g. scraping: mycompany/skills@crawler
-
-custom_domains: []   # extend the taxonomy without forking, e.g.
-                     # - id: wordpress
-                     #   keywords: [wordpress, woocommerce, elementor]
-                     #   query: wordpress
 
 log:
   path: ~/.metaskill/log.jsonl

@@ -13,13 +13,11 @@ const cand = (pkg: string, installs: number): Candidate => ({
 describe("buildContext (spec 4.2.7)", () => {
   it("renders the full block", () => {
     const ctx = buildContext({
-      domains: ["xlsx", "python"],
       installedNow: [{ pkg: "anthropics/skills@xlsx", version: "2026.07.1", path: "/Users/x/.claude/skills/xlsx/SKILL.md" }],
       present: [{ domain: "python", skill: "python-best-practices" }],
       ask: [{ candidate: cand("foo/bar@xlsx-charts", 410), reason: "publisher foo not allowlisted" }],
       denied: 1,
     });
-    expect(ctx).toContain("[metaskill] Domains: xlsx, python.");
     expect(ctx).toContain("Installed now: anthropics/skills@xlsx (v2026.07.1) →");
     expect(ctx).toContain("skills/xlsx/SKILL.md");
     expect(ctx).toContain("Already present: python-best-practices");
@@ -29,12 +27,11 @@ describe("buildContext (spec 4.2.7)", () => {
   });
 
   it("returns null when there is nothing actionable (spec 4.8: report nothing)", () => {
-    expect(buildContext({ domains: ["xlsx"], installedNow: [], present: [], ask: [], denied: 0 })).toBeNull();
+    expect(buildContext({ installedNow: [], present: [], ask: [], denied: 0 })).toBeNull();
   });
 
   it("caps at 600 chars with whole-line truncation, keeping installs first", () => {
     const report = {
-      domains: ["xlsx"],
       installedNow: [{ pkg: "anthropics/skills@xlsx", version: "1", path: "/p/SKILL.md" }],
       present: [] as { domain: string; skill: string }[],
       ask: Array.from({ length: 20 }, (_, i) => ({

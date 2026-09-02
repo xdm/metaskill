@@ -37,8 +37,15 @@ function readOne(file: string): IndexFile | null {
   }
 }
 
+// METASKILL_INDEX exists for test isolation: a sandboxed HOME can redirect
+// indexPath() (via METASKILL_HOME), but snapshotPath() always resolves under
+// the running package's own root, which a test cannot relocate. Set, it is
+// the ONLY file consulted — missing or unreadable means null, never a
+// silent fall-through to whatever snapshot happens to sit in packageRoot().
 export function loadIndex(file?: string): IndexFile | null {
   if (file) return readOne(file);
+  const override = process.env.METASKILL_INDEX;
+  if (override && override.trim().length > 0) return readOne(override);
   return readOne(indexPath()) ?? readOne(snapshotPath());
 }
 

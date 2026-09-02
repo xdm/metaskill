@@ -2,11 +2,11 @@ import { cachePath } from "./paths.js";
 import { readJsonFile, writeJsonFile } from "./store.js";
 import type { CacheFile } from "./types.js";
 
-const EMPTY: CacheFile = { domainMap: {}, discovery: {} };
+const EMPTY: CacheFile = { discovery: {} };
 
 export function readCache(): CacheFile {
   const c = readJsonFile<Partial<CacheFile>>(cachePath(), {});
-  return { domainMap: c.domainMap ?? {}, discovery: c.discovery ?? {} };
+  return { discovery: c.discovery ?? {} };
 }
 
 export function writeCache(cache: CacheFile): void {

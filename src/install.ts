@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { readCache, writeCache } from "./cache.js";
 import { parseFrontmatter } from "./frontmatter.js";
 import { addLockEntry } from "./lock.js";
 import { agentsSkillsDir, claudeUserSkillsDir, skillsCmd } from "./paths.js";
@@ -31,8 +30,10 @@ export function locateInstalled(skill: string): string | undefined {
 
 // Wraps `skills add <pkg> -g -y` (spec 4.2.6 / 4.4). 20s default timeout —
 // on timeout the caller downgrades the candidate to `ask`, it never blocks
-// the hook longer. Records the install in ~/.metaskill/skills-lock.json and
-// maps domain -> skill in the cache so inventory covers it next time.
+// the hook longer. Records the install in ~/.metaskill/skills-lock.json,
+// `domain` and all — the query phrase that found it (or, for a manual
+// install, nothing) — purely so `metaskill list` has something to show under
+// MATCHED; nothing reads it back to make a decision.
 export async function installSkill(
   pkg: string,
   domain: string | undefined,
@@ -65,11 +66,6 @@ export async function installSkill(
   }
 
   addLockEntry({ pkg, skill, installedAt: new Date().toISOString(), version, domain });
-  if (domain) {
-    const cache = readCache();
-    cache.domainMap[domain] = skill;
-    writeCache(cache);
-  }
 
   return { ok: true, pkg, skillMdPath, version };
 }

@@ -2,7 +2,6 @@ import os from "node:os";
 import type { Candidate } from "./types.js";
 
 export interface RouteReport {
-  domains: string[];
   installedNow: { pkg: string; version?: string; path?: string }[];
   present: { domain: string; skill: string }[];
   ask: { candidate: Candidate; reason: string }[];
@@ -22,7 +21,7 @@ function shortenHome(p: string): string {
 export function buildContext(r: RouteReport): string | null {
   if (!r.installedNow.length && !r.present.length && !r.ask.length && !r.denied) return null;
 
-  const lines: string[] = [`[metaskill] Domains: ${r.domains.join(", ")}.`];
+  const lines: string[] = [];
   for (const i of r.installedNow) {
     const v = i.version ? ` (v${i.version})` : "";
     const p = i.path ? ` → ${shortenHome(i.path)}` : "";

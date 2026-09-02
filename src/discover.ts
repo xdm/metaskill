@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import { skillsCmd } from "./paths.js";
 import { readCache, writeCache } from "./cache.js";
-import type { DomainDef } from "./taxonomy.js";
 import type { Candidate } from "./types.js";
 
 export type Runner = (cmd: string[], timeoutMs: number) => Promise<{ stdout: string }>;
@@ -99,10 +98,6 @@ async function discoverRaw(cacheKey: string, query: string, opts: DiscoverOpts):
     opts.onFailure?.(err);
     return hit?.candidates ?? [];
   }
-}
-
-export async function discover(domain: DomainDef, opts: DiscoverOpts = {}): Promise<Candidate[]> {
-  return discoverRaw(domain.id, domain.query, opts);
 }
 
 export async function discoverByQuery(query: string, opts: DiscoverOpts = {}): Promise<Candidate[]> {

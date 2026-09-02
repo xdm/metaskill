@@ -29,9 +29,6 @@ export interface PolicyDecision {
 
 export interface Policy {
   version: number;
-  classifier: {
-    trivialMaxChars: number;
-  };
   trust: {
     allowlist: string[];
     autoThreshold: { minInstalls: number; requireCleanScan: boolean };
@@ -42,8 +39,6 @@ export interface Policy {
     denyIfContains: string[];
     maxArchiveKb: number;
   };
-  domains: Record<string, string>;
-  customDomains: import("./taxonomy.js").DomainDef[];
   log: { path: string; retentionDays: number };
 }
 
@@ -71,13 +66,6 @@ export interface InstallResult {
   error?: string;
 }
 
-export interface HeuristicResult {
-  domains: string[]; // prompt-derived + merged stack domains
-  confidence: "high" | "low";
-  trivial: boolean;
-  stackDomains: string[]; // stack-derived, informational
-}
-
 export interface DiscoveredLogItem {
   pkg: string;
   installs: number;
@@ -98,7 +86,6 @@ export interface RouteLogEntry {
 }
 
 export interface CacheFile {
-  domainMap: Record<string, string>; // domain -> installed skill name
   discovery: Record<string, { ts: string; candidates: Candidate[] }>;
 }
 

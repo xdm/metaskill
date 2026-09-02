@@ -2,8 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { discover, parseFindOutput, parseInstalls, publisherOf, stripAnsi } from "../src/discover.js";
-import { getDomain } from "../src/taxonomy.js";
+import { discoverByQuery, parseFindOutput, parseInstalls, publisherOf, stripAnsi } from "../src/discover.js";
 
 // Captured from real `npx skills find xlsx` (v1.5.23), colors included.
 const REAL_OUTPUT = [
@@ -70,17 +69,15 @@ describe("discover cache (24h, spec 4.2.4)", () => {
     else process.env.METASKILL_HOME = saved;
   });
 
-  const domain = getDomain("xlsx")!;
-
   it("runs the CLI once, then serves from cache within 24h", async () => {
     let calls = 0;
     const runner = async () => {
       calls++;
       return { stdout: REAL_OUTPUT };
     };
-    const first = await discover(domain, { runner, now: new Date("2026-08-26T10:00:00Z") });
+    const first = await discoverByQuery("xlsx", { runner, now: new Date("2026-08-26T10:00:00Z") });
     expect(first).toHaveLength(3);
-    const second = await discover(domain, { runner, now: new Date("2026-08-26T20:00:00Z") });
+    const second = await discoverByQuery("xlsx", { runner, now: new Date("2026-08-26T20:00:00Z") });
     expect(second).toHaveLength(3);
     expect(calls).toBe(1);
   });
@@ -92,8 +89,8 @@ describe("discover cache (24h, spec 4.2.4)", () => {
       if (calls === 2) throw new Error("network down");
       return { stdout: REAL_OUTPUT };
     };
-    await discover(domain, { runner, now: new Date("2026-08-26T10:00:00Z") });
-    const stale = await discover(domain, { runner, now: new Date("2026-08-28T10:00:00Z") });
+    await discoverByQuery("xlsx", { runner, now: new Date("2026-08-26T10:00:00Z") });
+    const stale = await discoverByQuery("xlsx", { runner, now: new Date("2026-08-28T10:00:00Z") });
     expect(calls).toBe(2);
     expect(stale).toHaveLength(3); // stale cache served despite the failure
   });
