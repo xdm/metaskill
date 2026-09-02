@@ -19,11 +19,27 @@ describe("tokenize", () => {
 });
 
 describe("search", () => {
-  it("ranks an on-topic skill above an unrelated one", () => {
-    const hits = search(index, "excel spreadsheet", 5);
-    expect(hits.length).toBeGreaterThan(0);
-    const names = hits.map((h) => h.record.name.toLowerCase()).join(" ");
-    expect(names).toMatch(/xlsx|excel|spreadsheet/);
+  it("ranks the real top-3 for a capability phrase (golden ranking)", () => {
+    // Exact order, not membership: 10 distinct packages score for this query
+    // in the fixture, so a broken scorer (reversed sort, or BM25 with the
+    // IDF factor dropped) lands a different top-3, not just a reordering of
+    // the same hits. Checked against both before this test was kept — see
+    // task-1-report.md.
+    const hits = search(index, "database migration", 3);
+    expect(hits.map((h) => h.record.pkg)).toEqual([
+      "prisma/skills@prisma-database-setup",
+      "prisma/skills@prisma-postgres-setup",
+      "prisma/skills@prisma-upgrade-v7",
+    ]);
+  });
+
+  it("dedupes a package that appears multiple times in the index", () => {
+    // pbakaus/impeccable@impeccable is present 17 times in the fixture — real
+    // upstream duplication (repeat scans), not a fixture artifact. A top-N
+    // shown to the user must not let one package fill multiple slots.
+    const hits = search(index, "frontend design critique", 5);
+    const pkgs = hits.map((h) => h.record.pkg);
+    expect(pkgs.filter((p) => p === "pbakaus/impeccable@impeccable")).toHaveLength(1);
   });
 
   it("returns at most the requested limit", () => {

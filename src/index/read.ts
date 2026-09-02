@@ -60,7 +60,10 @@ export function search(index: IndexFile, query: string, limit = 5): Hit[] {
   }
 
   const N = docs.length;
-  const hits: Hit[] = [];
+  // Dedup by pkg, keeping the highest-scoring row: index.json can carry the
+  // same package more than once (repeat scans, registry sweep overlap), and
+  // a caller-facing top-N must not repeat a package to fill it.
+  const bestByPkg = new Map<string, Hit>();
   for (let i = 0; i < N; i++) {
     const doc = docs[i]!;
     if (!doc.length) continue;
@@ -75,9 +78,13 @@ export function search(index: IndexFile, query: string, limit = 5): Hit[] {
       const idf = Math.log(1 + (N - n + 0.5) / (n + 0.5));
       score += idf * ((f * (K1 + 1)) / (f + K1 * (1 - B + (B * doc.length) / avgLen)));
     }
-    if (score > 0) hits.push({ record: index.skills[i]!, score });
+    if (score <= 0) continue;
+    const record = index.skills[i]!;
+    const existing = bestByPkg.get(record.pkg);
+    if (!existing || score > existing.score) bestByPkg.set(record.pkg, { record, score });
   }
 
+  const hits = [...bestByPkg.values()];
   // Tie-break on pkg so equal scores never reorder between runs.
   hits.sort((a, b) => b.score - a.score || a.record.pkg.localeCompare(b.record.pkg));
   return hits.slice(0, limit);
