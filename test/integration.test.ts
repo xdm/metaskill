@@ -360,7 +360,7 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     const r = await runCli(["find", "thingamajig", "--index", idx], { home, env: { STUB_ADD_FAIL: "1" } });
     expect(r.code).toBe(0);
     expect(r.stdout).toContain(
-      `Install failed — ask the user, then run: node "${CLI}" install anthropics/skills@thingamajig --force`,
+      `Install failed — ask the user, then run: "${process.execPath}" "${CLI}" install anthropics/skills@thingamajig --force`,
     );
     expect(r.stdout).not.toContain("Installed now:");
     expect(readLockFile(home)["anthropics/skills@thingamajig"]).toBeUndefined();
@@ -387,7 +387,7 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     expect(r.stdout).toContain("someorg/repo@snorklex (42 installs");
     expect(r.stdout).toContain("otherorg/tools@snorklex-lite (~12 est installs");
     expect(r.stdout).toContain("[ask:");
-    expect(r.stdout).toContain(`On an explicit yes run: node "${CLI}" install <pkg> --force`);
+    expect(r.stdout).toContain(`On an explicit yes run: "${process.execPath}" "${CLI}" install <pkg> --force`);
     fs.rmSync(home, { recursive: true, force: true });
   });
 
@@ -523,7 +523,8 @@ describe("init end-to-end (spec 4.1)", () => {
     expect(routeCmd).toContain(path.join(".metaskill", "bin", "dist", "cli.js"));
     expect(fs.existsSync(path.join(home, ".metaskill", "bin", "dist", "cli.js"))).toBe(true);
     expect(fs.existsSync(path.join(home, ".metaskill", "bin", "skills", "metaskill", "SKILL.md"))).toBe(true);
-    expect(s1.hooks.SessionStart[0].matcher).toBe("startup|resume|clear");
+    expect(s1.hooks.SessionStart[0].matcher).toBe("startup|resume|clear|compact");
+    expect(s1.hooks.SessionStart[0].hooks[0].timeout).toBe(120);
     expect(fs.existsSync(path.join(home, ".metaskill", "metaskill.yaml"))).toBe(true);
     expect(fs.existsSync(path.join(home, ".claude", "skills", "metaskill", "SKILL.md"))).toBe(true);
 
@@ -652,7 +653,9 @@ describe("sync end-to-end (spec 4.3)", () => {
     expect(r.stdout.trim().split("\n")).toHaveLength(1);
     const ctx = (JSON.parse(r.stdout) as any).hookSpecificOutput.additionalContext as string;
     expect(ctx).toContain("[metaskill] Standing protocol");
-    expect(ctx).toMatch(/node "[^"]*cli\.js" find "/);
+    // Through the real spawned CLI, so cliEntryPath() resolves to dist/cli.js
+    // rather than the source tree, and both halves are absolute and quoted.
+    expect(ctx).toContain(`"${process.execPath}" "${CLI}" find "`);
     expect(stubCalls(home)).toHaveLength(0);
     fs.rmSync(home, { recursive: true, force: true });
   });
@@ -741,7 +744,14 @@ describe("packaged assets", () => {
     const md = fs.readFileSync(path.join(ROOT, "skills", "metaskill", "SKILL.md"), "utf8");
     // ~4 chars/token upper bound: 6000 chars ≈ 1500 tokens
     expect(md.length).toBeLessThanOrEqual(6000);
-    expect(md).toContain("metaskill install");
+    // It must still tell the model how to install — but never with the bare
+    // `metaskill install` spelling, which is absent from the PATH a hook or a
+    // Bash call inherits. SKILL.md is copied verbatim (no {{METASKILL}}
+    // substitution, unlike commands/*.md), so it points at the command the
+    // block prints rather than interpolating a path it cannot know.
+    expect(md).toContain("install <pkg> --force");
+    expect(md).toContain("dist/cli.js");
+    expect(md).not.toMatch(/`metaskill (install|update|log|init)\b/);
     expect(md).toContain("one");
   });
 });

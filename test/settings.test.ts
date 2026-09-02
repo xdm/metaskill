@@ -10,7 +10,7 @@ describe("settings hooks merge (spec 4.1)", () => {
     expect(ups[0]!.hooks![0]!.timeout).toBe(90);
     expect(ups[0]!.matcher).toBeUndefined(); // UserPromptSubmit has no matcher support
     const ss = s.hooks!.SessionStart!;
-    expect(ss[0]!.matcher).toBe("startup|resume|clear");
+    expect(ss[0]!.matcher).toBe("startup|resume|clear|compact");
     expect(ss[0]!.hooks![0]!.command).toBe(hookCommand("sync"));
     expect(ss[0]!.hooks![0]!.timeout).toBe(120);
   });
@@ -29,8 +29,24 @@ describe("settings hooks merge (spec 4.1)", () => {
     };
     const ss = addHooks(stale).hooks!.SessionStart!;
     expect(ss).toHaveLength(1); // repaired in place, not duplicated
-    expect(ss[0]!.matcher).toBe("startup|resume|clear");
+    expect(ss[0]!.matcher).toBe("startup|resume|clear|compact");
     expect(ss[0]!.hooks![0]!.timeout).toBe(120);
+  });
+
+  it("leaves a group with NO matcher alone, rather than narrowing it", () => {
+    // An absent matcher fires on every source there is — startup, resume,
+    // clear, compact and anything added later — so writing our string over it
+    // would strictly reduce when the protocol is injected. A repair must never
+    // be a downgrade.
+    const broad: Settings = {
+      hooks: {
+        SessionStart: [{ hooks: [{ type: "command", command: hookCommand("sync"), timeout: 60 }] }],
+      },
+    };
+    const ss = addHooks(broad).hooks!.SessionStart!;
+    expect(ss).toHaveLength(1);
+    expect(ss[0]!.matcher).toBeUndefined();
+    expect(ss[0]!.hooks![0]!.timeout).toBe(120); // timeout still repaired
   });
 
   it("never rewrites the matcher of a group it shares with a foreign hook", () => {

@@ -16,8 +16,13 @@ export function cliEntryPath(): string {
 // `metaskill` is not on PATH for a plugin-cache or npx install, so the bare
 // name is the spelling most likely to fail; and two different spellings in one
 // turn is a reason for a model to trust neither.
+//
+// Both halves are absolute and quoted. Bare `node` is not on the PATH a hook
+// inherits under nvm, Herd or a Homebrew-less setup, and an interpreter path
+// routinely contains a space (macOS "Application Support"), so an unquoted
+// path is split by the shell.
 export function metaskillCmd(): string {
-  return `node "${cliEntryPath()}"`;
+  return `"${process.execPath}" "${cliEntryPath()}"`;
 }
 
 // init copies the package here and points hooks at it, so `npx ... init`

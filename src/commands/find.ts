@@ -92,7 +92,23 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
 
     // Long tail: the index is a snapshot, so fall back to one live search.
     if (!hits.length) {
-      const cands = await discoverByQuery(q);
+      // 3s, not discoverRaw's 10s default. The protocol now tells the model to
+      // run `find` at the start of EVERY task, and most of those miss the local
+      // index and land here. Ten silent seconds, several times a session, is
+      // what teaches a model to quietly stop obeying a standing instruction —
+      // the same ending as never running it at all. The live call itself stays
+      // (spec §6 mandates it for the long tail); only the budget shrinks, and
+      // only on this path. route.ts keeps the 10s default: it runs once per
+      // prompt with no model waiting on the result.
+      //
+      // MEASURED, and the number is uncomfortably tight: `npx -y skills@1.5.23
+      // find` costs 2.86s / 3.06s / 3.08s on three warm runs (macOS, warm npx
+      // cache), so 3s sits ON the operation's latency rather than above it and
+      // a long-tail lookup is close to a coin flip. A failure caches nothing,
+      // so a repeated query pays it again every time. Re-measure before
+      // treating this as settled; 4s is the smallest value that clears the
+      // observed maximum while still being 2.5x cheaper than the old default.
+      const cands = await discoverByQuery(q, { timeoutMs: 3_000 });
       if (!cands.length) {
         process.stdout.write(`[metaskill] No skills found for "${q}". Solve the task without one.\n${pluginLine}`);
         logFind([], []);

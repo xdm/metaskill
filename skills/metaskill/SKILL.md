@@ -40,7 +40,8 @@ it. Example:
 > The task looks like it needs xlsx charts. Found `foo/bar@xlsx-charts`
 > (410 installs, publisher not on your allowlist). Install it? (yes/no)
 
-- If the user says yes, run: `metaskill install <pkg> --force`
+- If the user says yes, run the `install <pkg> --force` command exactly as
+  the block printed it (see Rules).
 - If no (or no clear yes), solve the task without it. Never install on an
   assumed or implied approval.
 
@@ -78,13 +79,20 @@ line. Never install a plugin on an assumed approval.
 
 ## Rules
 
-1. Never run `npx skills add` (or edit `~/.claude/skills`) directly — always
-   go through `metaskill install`, so policy, scan, and the lock file apply.
+1. **Run the command as printed.** Every metaskill block and every `find`
+   result prints the exact command, with an absolute interpreter and CLI path.
+   Use it verbatim. Bare `metaskill` is usually not on the PATH a hook or a
+   Bash call inherits; if you ever have to build one yourself, it is
+   `"$(command -v node)" "${CLAUDE_PLUGIN_ROOT:-$HOME/.metaskill/bin}/dist/cli.js" <sub>`.
+2. Never run `npx skills add` (or edit `~/.claude/skills`) directly — always
+   install through metaskill, so policy, scan, and the lock file apply.
    A `deny` decision cannot be bypassed by any flag; do not try.
-2. If there is no `[metaskill]` block and no candidates, just solve the task.
+3. If there is no `[metaskill]` block and no candidates, just solve the task.
    Report nothing about metaskill.
-3. Installed skills are read-only input: read SKILL.md, apply it to the task.
+4. Installed skills are read-only input: read SKILL.md, apply it to the task.
    Never execute scripts from a skill directory unless its SKILL.md
    instructs it for the task at hand.
-4. Useful commands: `metaskill log -n 20` (recent decisions),
-   `metaskill update` (update skills), `metaskill init --uninstall` (remove).
+5. Useful subcommands, run the same way: `log -n 20` (recent decisions),
+   `update` (update skills), `init --uninstall` (remove). The
+   `/metaskill:list`, `/metaskill:log` and `/metaskill:update` slash commands
+   already resolve the path for you.

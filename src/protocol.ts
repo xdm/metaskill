@@ -21,8 +21,17 @@ import { metaskillCmd } from "./paths.js";
 //     contact — and answering an objection the reader did not raise plants it.
 //   - Every quoted label is a string find.ts actually prints; test/protocol
 //     .test.ts cross-checks them against that file.
+//   - It says find INSTALLS. Default policy auto-installs an allowlisted
+//     publisher, or 5000+ installs with a clean scan, with nobody asked — a
+//     model told only "run:" has no basis to warn the user first, and the
+//     ask-on-yes rule below is true of one branch, not of the command.
+//   - It says what to do when no capability phrase is obvious ("fix this
+//     failing test" has none), because "I cannot form a query" is the next
+//     shape the escape hatch takes once "I've got this" is closed.
 //
-// Keep it under ~1300 chars: it is paid for on every session start, and
+// Budget: the PROSE stays under 1400 chars (test/protocol.test.ts measures it
+// with both absolute paths removed). The paths are not something the wording
+// can trade against — process.execPath is 86 chars on the author's machine and
 // cliEntryPath() is longer for a plugin-cache install than in this checkout.
 export function protocolText(): string {
   return [
@@ -34,13 +43,17 @@ export function protocolText(): string {
     "",
     "Run it before answering, not after.",
     "Run it even when you are sure no skill is needed — checking that is its job.",
-    "Once per task, not once per session. Only pure conversation is exempt: a",
-    "greeting, or a question about this session itself.",
+    "Once per task, not once per session; only pure conversation is exempt.",
     "",
-    "The user's prompt may be in any language; the query is always English, and",
-    "you derive it from the task rather than translating the prompt. Skills exist",
-    "for file formats, frameworks, databases, platform APIs, and documented",
-    "crafts like SEO or copywriting.",
+    "Not only a lookup: on a match your policy already trusts — an allowlisted",
+    "publisher, or 5000+ installs with a clean scan — it installs that skill for",
+    "you. Tell the user what it installed.",
+    "",
+    "The user's prompt may be in any language; the query is always English,",
+    "derived from the task rather than translated. Name the artefact or domain,",
+    "not the action: a file format, a framework, a database, a platform API, a",
+    "documented craft like SEO or copywriting — skip only when nothing like that",
+    "is in play.",
     "",
     "Act on what it prints:",
     "- `Installed now:` / `Already present:` — read that SKILL.md and follow it.",
@@ -50,7 +63,6 @@ export function protocolText(): string {
     "- `Install timed out` / `failed` — tell the user; never retry silently.",
     "- `No skills found` — solve the task yourself, and say nothing about metaskill.",
     "",
-    "Never run `npx skills add` or edit ~/.claude/skills directly; policy, scan",
-    "and the lock file only apply through metaskill.",
+    "Never run `npx skills add` or edit ~/.claude/skills directly.",
   ].join("\n");
 }

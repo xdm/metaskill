@@ -28,10 +28,16 @@ function upsert(groups: HookGroup[], sub: "route" | "sync", matcher: string | un
         // matcher forever and re-running `init` cannot repair it — which is
         // how npm-install users ended up permanently missing `clear`, and so
         // getting no protocol at all for the rest of a session after /clear.
-        // Only when our hook is alone in its group: a group we share with a
-        // foreign hook is that hook's config too, and addHooks promises not to
-        // touch anything but its own.
-        if (matcher && (g.hooks ?? []).length === 1) g.matcher = matcher;
+        //
+        // Two conditions, and both are about not making things worse:
+        //  - our hook is alone in its group, because a group we share with a
+        //    foreign hook is that hook's configuration too, and addHooks
+        //    promises to touch nothing but its own;
+        //  - the group already HAS a matcher. An absent matcher fires on every
+        //    source there is, which is strictly broader than any string we
+        //    could write — replacing it would be a downgrade wearing the
+        //    clothes of a repair.
+        if (matcher && g.matcher && (g.hooks ?? []).length === 1) g.matcher = matcher;
         return;
       }
     }
@@ -51,11 +57,14 @@ export function addHooks(settings: Settings): Settings {
   // install — a 30s kill can land after the install but before the log line.
   upsert(settings.hooks.UserPromptSubmit, "route", undefined, 90);
   settings.hooks.SessionStart ??= [];
-  // `clear` too: a /clear that drops the protocol leaves the rest of that
-  // session with none. 120s, not 60: the protocol is emitted before any of
-  // sync's slow work, but the index refresh behind it needs room to finish
-  // rather than being cut off mid-download every session.
-  upsert(settings.hooks.SessionStart, "sync", "startup|resume|clear", 120);
+  // `clear` and `compact`: a session that loses its injected context and does
+  // not get the protocol back spends the rest of its life without one. That is
+  // the ordinary end of a long session — auto-compact fires on its own, which
+  // makes it the commonest way this happens and the point where the protocol
+  // matters most. 120s, not 60: the protocol is emitted before any of sync's
+  // slow work, but the index refresh behind it needs room to finish rather
+  // than being cut off mid-download every session.
+  upsert(settings.hooks.SessionStart, "sync", "startup|resume|clear|compact", 120);
   return settings;
 }
 
