@@ -61,10 +61,11 @@ export function loadPolicy(): Policy {
 
 // Spec 4.5 decision table, in order: deny_skills / deny_publishers -> deny;
 // dirty scan -> deny; estimated installs -> ask; scan advisories -> ask;
-// allowlisted publisher -> auto; installs >= min_installs with a clean scan
-// -> auto; otherwise ask. The scan and the estimated-installs check both
-// outrank the allowlist: a trusted publisher's repo can still be compromised
-// or contain a skill nobody has actually installed.
+// allowlisted publisher WITH a clean scan -> auto; installs >= min_installs
+// with a clean scan -> auto; otherwise ask. The scan and the
+// estimated-installs check both outrank the allowlist: a trusted publisher's
+// repo can still be compromised or contain a skill nobody has actually
+// installed.
 export function decide(c: Candidate, scan: ScanResult, p: Policy): PolicyDecision {
   if (p.trust.denySkills.includes(c.pkg)) {
     return { decision: "deny", reason: `${c.pkg} is in deny_skills` };
@@ -88,8 +89,31 @@ export function decide(c: Candidate, scan: ScanResult, p: Policy): PolicyDecisio
   if (scan.advisories.length) {
     return { decision: "ask", reason: `scan advisory: ${scan.advisories.slice(0, 3).join("; ")}` };
   }
+  // Allowlisted, but the scan must still be CLEAN. `dirty` was already denied
+  // above; what this catches is the absence of a verdict — `unknown` in the
+  // index (300 records, 6.2% of the shipped snapshot), `unavailable` from a
+  // scan that could not complete, `skipped` from a caller that ran none.
+  // Spec 4.1 maps unknown to ask, never auto, and an unscanned package from a
+  // trusted publisher is exactly the compromised-commit case the allowlist is
+  // least able to see. The allowlist still does its job below: it waives the
+  // install-count threshold, which is all it was ever meant to waive.
   if (p.trust.allowlist.includes(c.publisher)) {
-    return { decision: "auto", reason: `publisher ${c.publisher} is allowlisted` };
+    // `require_clean_scan: false` is the user saying, in their own config,
+    // that they do not want a clean verdict demanded of anyone. It already
+    // means exactly that for the threshold branch below; honouring it here
+    // too keeps allowlisted publishers from ending up held to a STRICTER
+    // standard than strangers. It is off by default, and the allowlist
+    // itself no longer waives anything.
+    if (scan.status === "clean" || !p.trust.autoThreshold.requireCleanScan) {
+      return {
+        decision: "auto",
+        reason: `publisher ${c.publisher} is allowlisted` + (scan.status === "clean" ? ", scan clean" : ""),
+      };
+    }
+    return {
+      decision: "ask",
+      reason: `publisher ${c.publisher} is allowlisted but scan is ${scan.status}`,
+    };
   }
 
   const { minInstalls, requireCleanScan } = p.trust.autoThreshold;

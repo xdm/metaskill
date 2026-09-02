@@ -1,4 +1,5 @@
 import { publisherOf } from "../discover.js";
+import { findByPkg, loadIndex, scanResultFromIndex } from "../index/read.js";
 import { installSkill } from "../install.js";
 import { decide, loadPolicy } from "../policy.js";
 import { scanCandidate } from "../scan.js";
@@ -25,11 +26,22 @@ export async function installCommand(pkg: string | undefined, flags: InstallFlag
     url: "",
   };
 
+  // The local index already carries a scan verdict for every package it knows
+  // (spec 7 Defect 2: the runtime reads a field, it does not re-download a
+  // tarball), so it is consulted FIRST — for every publisher, allowlisted or
+  // not. This path used to run no scan at all for an allowlisted publisher
+  // and hand decide() a bare "skipped", which is how
+  // `install anthropics/skills@xlsx` installed, silently, a package the very
+  // index shipped in this package marks dirty. Only a package the index has
+  // never heard of falls back to the live tarball scan.
   let scan: ScanResult = { status: "skipped", findings: [], advisories: [] };
-  if (
-    !policy.trust.allowlist.includes(candidate.publisher) &&
-    !policy.trust.denyPublishers.includes(candidate.publisher)
-  ) {
+  const index = loadIndex();
+  const indexed = index ? findByPkg(index, pkg) : null;
+  if (indexed) {
+    scan = scanResultFromIndex(indexed);
+  } else if (!policy.trust.denyPublishers.includes(candidate.publisher)) {
+    // A denied publisher is refused below whatever the scan says; downloading
+    // its tarball first would be work with no decision riding on it.
     process.stdout.write(`Scanning ${pkg} ...\n`);
     scan = await scanCandidate(candidate, policy);
   }

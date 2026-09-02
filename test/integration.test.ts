@@ -951,6 +951,70 @@ describe("manual install: deny is final (spec §5)", () => {
   });
 });
 
+describe("manual install reads the index verdict, for every publisher (spec §7 Defect 2)", () => {
+  function seedIndex(home: string, skills: unknown[]): void {
+    fs.mkdirSync(path.join(home, ".metaskill"), { recursive: true });
+    fs.writeFileSync(path.join(home, ".metaskill", "index.json"), JSON.stringify(indexFile(skills)));
+  }
+
+  it("refuses an allowlisted package the index scans dirty, and --force does not help", async () => {
+    // This path ran NO scan at all for an allowlisted publisher and handed
+    // decide() a bare "skipped", so `metaskill install anthropics/skills@xlsx`
+    // installed — silently — a package the index shipped in this very package
+    // marks dirty.
+    const home = freshHome("install-dirty");
+    seedIndex(home, [
+      rec({ name: "xlsx", source: "anthropics/skills", pkg: "anthropics/skills@xlsx",
+            description: "Excel workbooks.", installs: 158400,
+            scan: "dirty", scanFindings: ["os.environ in scripts/x.py"] }),
+    ]);
+    const r = await runCli(["install", "anthropics/skills@xlsx"], { home });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("DENIED");
+    expect(r.stderr).toContain("os.environ");
+    expect(r.stdout).not.toContain("Scanning"); // the verdict came from the index, not a download
+    expect(stubCalls(home).filter((c) => c[0] === "add")).toEqual([]);
+
+    const forced = await runCli(["install", "anthropics/skills@xlsx", "--force"], { home });
+    expect(forced.code).toBe(1);
+    expect(forced.stderr).toContain("cannot be bypassed");
+    expect(stubCalls(home).filter((c) => c[0] === "add")).toEqual([]);
+    expect(readLockFile(home)).toEqual({});
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("installs an allowlisted package the index scans clean, without downloading anything", async () => {
+    const home = freshHome("install-clean");
+    seedIndex(home, [
+      rec({ name: "xlsx", source: "anthropics/skills", pkg: "anthropics/skills@xlsx",
+            description: "Excel workbooks.", installs: 158400 }),
+    ]);
+    const r = await runCli(["install", "anthropics/skills@xlsx"], { home });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain("Installed anthropics/skills@xlsx");
+    expect(r.stdout).not.toContain("Scanning");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("falls back to the live scan only when the package is absent from the index — allowlist included", async () => {
+    // A non-GitHub package: scanCandidate returns "unavailable" before it
+    // touches the network, which is exactly the "no verdict" case the
+    // allowlist used to auto-install straight through.
+    const home = freshHome("install-fallback");
+    fs.mkdirSync(path.join(home, ".metaskill"), { recursive: true });
+    fs.writeFileSync(path.join(home, ".metaskill", "metaskill.yaml"), "trust:\n  allowlist: [modelscope.cn]\n");
+    seedIndex(home, [rec({})]); // an index that has never heard of the package below
+
+    const r = await runCli(["install", "modelscope.cn@node-helper"], { home });
+    expect(r.stdout).toContain("Scanning modelscope.cn@node-helper");
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("Needs confirmation");
+    expect(r.stderr).toContain("unavailable");
+    expect(stubCalls(home).filter((c) => c[0] === "add")).toEqual([]);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+});
+
 describe("list command", () => {
   it("shows what metaskill installed, with on-disk status and alias", async () => {
     const home = freshHome("list");
@@ -962,6 +1026,16 @@ describe("list command", () => {
     // on-disk state `install` would have produced as a side effect before.
     // Manual install has no --domain flag any more — no query phrase to
     // record — so this entry's MATCHED column renders "-".
+    //
+    // The index carries the verdict `install` now decides on (spec §7 Defect
+    // 2), so it has to exist: without it the command falls back to the live
+    // tarball scan, which this suite must never reach.
+    fs.mkdirSync(path.join(home, ".metaskill"), { recursive: true });
+    fs.writeFileSync(
+      path.join(home, ".metaskill", "index.json"),
+      JSON.stringify(indexFile([rec({ name: "xlsx", source: "anthropics/skills", pkg: "anthropics/skills@xlsx",
+                                      description: "Excel workbooks.", installs: 158400 })])),
+    );
     await runCli(["install", "anthropics/skills@xlsx"], { home });
     const r = await runCli(["list"], { home });
     expect(r.stdout).toMatch(/SKILL\s+PACKAGE\s+VERSION\s+MATCHED\s+INSTALLED\s+STATUS/);

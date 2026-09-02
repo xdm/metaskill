@@ -22,8 +22,39 @@ describe("policy.decide (spec 4.5 decision table)", () => {
     expect(decide(cand("anthropics", 999999), skipped, pol).decision).toBe("deny");
   });
 
-  it("allowlisted publisher -> auto without a scan", () => {
-    expect(decide(cand("anthropics", 0), skipped, p).decision).toBe("auto");
+  // INVERTED. This used to assert "allowlisted publisher -> auto without a
+  // scan" and, in doing so, pinned the defect: an allowlisted publisher was
+  // auto-installed on the ABSENCE of a verdict. Ruling 4 mutation-tested the
+  // allowlist against dirty/estimated/advisories but never against no scan at
+  // all, so `metaskill install anthropics/skills@xlsx` installed, unattended,
+  // a package the shipped index marks dirty. Spec 4.1: unknown maps to ask,
+  // never auto.
+  it("allowlisted publisher with no scan -> ask, never auto", () => {
+    const v = decide(cand("anthropics", 0), skipped, p);
+    expect(v.decision).toBe("ask");
+    expect(v.reason).toContain("skipped");
+  });
+
+  it("allowlisted publisher with an unavailable scan -> ask, naming the status", () => {
+    const v = decide(cand("anthropics", 999999), unavailable, p);
+    expect(v.decision).toBe("ask");
+    expect(v.reason).toContain("allowlisted");
+    expect(v.reason).toContain("unavailable");
+  });
+
+  it("allowlisted publisher with a clean scan -> auto, whatever the install count", () => {
+    // The allowlist keeps its one remaining power: it waives the install
+    // threshold. Zero installs, clean scan, allowlisted -> auto.
+    expect(decide(cand("anthropics", 0), clean, p).decision).toBe("auto");
+  });
+
+  it("require_clean_scan: false relaxes the allowlist too, not only the threshold", () => {
+    // Deliberate coupling: the switch is the user saying they do not want a
+    // clean verdict demanded of anyone. Held only against strangers, it would
+    // leave allowlisted publishers treated more strictly than unknown ones.
+    const pol = defaultPolicy();
+    pol.trust.autoThreshold.requireCleanScan = false;
+    expect(decide(cand("anthropics", 0), skipped, pol).decision).toBe("auto");
   });
 
   it("dirty scan -> deny outside the allowlist", () => {
@@ -180,7 +211,7 @@ describe("policy.loadPolicy", () => {
         "  model: claude-haiku-4-5",
         "  trivial_max_chars: 25",
         "domains:",
-        "  bitrix24: xdm/skills@bitrix24-rest",
+        "  crm: someone/skills@crm-rest",
         "custom_domains:",
         "  - id: wordpress",
         "    keywords: [wordpress]",
