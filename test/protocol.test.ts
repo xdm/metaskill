@@ -74,6 +74,9 @@ describe("protocolText", () => {
       // labels have to be the ones that actually reach the screen.
       "Ask the user:",
       "Borderline match",
+      // Named in the block as well as in SKILL.md, so renaming it in find.ts
+      // fails the block's cross-check too, not only the reference's.
+      "Weak matches only",
       // A timed-out live lookup and a registry that answered "nothing" are
       // different facts. One label for both would have the model report a
       // coverage gap it never established.

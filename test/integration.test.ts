@@ -258,9 +258,13 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     // The verdict is still computed and still shown — the knob downgrades it
     // to a question, it does not hide why the package would have qualified.
     expect(r.stdout).toContain("[ask: needs your yes — auto-install is off; publisher anthropics is allowlisted, scan clean]");
+    // The command names the package the question above it names. `<pkg>` was
+    // a command the model had to edit before running, against Rule 1 ("run
+    // the command as printed") — and the live branch never had a placeholder.
     expect(r.stdout).toContain(
-      `Install only on the user's explicit yes: "${process.execPath}" "${CLI}" install <pkg> --force`,
+      `Install only on the user's explicit yes: "${process.execPath}" "${CLI}" install anthropics/skills@gizmo --force --matched "gizmo automation"`,
     );
+    expect(r.stdout).not.toContain("install <pkg>");
     expect(r.stdout).not.toContain("Installed now:");
     // Nothing ran, nothing was recorded, nothing landed on disk.
     expect(stubCalls(home).filter((c) => c[0] === "add")).toEqual([]);
@@ -371,7 +375,7 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     // every row, whatever the decision.
     expect(r.stdout).toMatch(/relevance=\d\.\d\d\)/);
     expect(r.stdout).toContain(
-      `Install only on the user's explicit yes: "${process.execPath}" "${CLI}" install <pkg> --force`,
+      `Install only on the user's explicit yes: "${process.execPath}" "${CLI}" install someorg/repo@snorklex --force --matched "snorklex"`,
     );
     fs.rmSync(home, { recursive: true, force: true });
   });
@@ -482,6 +486,11 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     // ...and the row is still printed, with its number. Bands gate the
     // action, never the list.
     expect(r.stdout).toContain("someorg/repo@snorklex (42 installs, scan=clean, relevance=0.53)");
+    // The install line stays in this band — the cue ends in "then ask" — and
+    // names the same package the cue does.
+    expect(r.stdout).toContain(
+      `Install only on the user's explicit yes: "${process.execPath}" "${CLI}" install someorg/repo@snorklex --force`,
+    );
     fs.rmSync(home, { recursive: true, force: true });
   });
 
@@ -492,6 +501,11 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     expect(verdictLines(r.stdout)).toEqual([
       "Weak matches only (top relevance 0.31) — solve the task yourself.",
     ]);
+    // ...and no install command under it. Left in place it was the only
+    // actionable line on screen, one line below "solve the task yourself",
+    // with exactly one askable package named above it.
+    expect(r.stdout).not.toContain("Install only on the user's explicit yes:");
+    expect(r.stdout).not.toContain("--force");
     fs.rmSync(home, { recursive: true, force: true });
   });
 
@@ -666,8 +680,8 @@ describe("find: ranking is a signal, not an action", () => {
 
   it("never lists a denied package under the ask header or beside an install command", async () => {
     // `deny` rows printed under the ask header, above a line reading
-    // `install <pkg> --force`, invite the model to go get approval for
-    // something no flag can install.
+    // `install <the askable package> --force`, invite the model to go get
+    // approval for something no flag can install.
     const home = freshHome("find-deny");
     const idx = writeIndex(home, [
       rec({ name: "flumbex", source: "anthropics/skills", pkg: "anthropics/skills@flumbex",
@@ -679,7 +693,7 @@ describe("find: ranking is a signal, not an action", () => {
     const r = await runCli(["find", "flumbex widget", "--index", idx], { home });
     expect(r.code).toBe(0);
     const askHeader = r.stdout.indexOf("find does not install");
-    const forceLine = r.stdout.indexOf("install <pkg> --force");
+    const forceLine = r.stdout.indexOf("install someorg/repo@flumbex-lite --force");
     const denied = r.stdout.indexOf("anthropics/skills@flumbex ");
     expect(askHeader).toBeGreaterThanOrEqual(0);
     expect(denied).toBeGreaterThan(forceLine); // below the ask block, never inside it
@@ -699,7 +713,7 @@ describe("find: ranking is a signal, not an action", () => {
     const r = await runCli(["find", "flumbex widget", "--index", idx], { home });
     expect(r.stdout).toContain('No skills found for "flumbex widget"');
     expect(r.stdout).not.toContain("find does not install");
-    expect(r.stdout).not.toContain("install <pkg> --force");
+    expect(r.stdout).not.toContain("Install only on the user's explicit yes:");
     // No askable row, so there is nothing to ask about. A question naming a
     // package no flag can install is a wasted turn ending in a failed command.
     expect(r.stdout).not.toContain("Ask the user: Install");
@@ -949,9 +963,13 @@ describe("find -> install --matched: the phrase a confirmed install records", ()
     expect(cmdLine).toBeDefined();
     const matchedArg = /--matched "([^"]*)"/.exec(cmdLine!)?.[1];
     expect(matchedArg).toBe("widget press formatting");
+    // The package is printed, not a placeholder: the model runs this line as
+    // it stands (SKILL.md Rule 1), it does not fill anything in.
+    const pkgArg = /install (\S+) --force/.exec(cmdLine!)?.[1];
+    expect(pkgArg).toBe("acme/tools@widget-press");
 
     const installed = await runCli(
-      ["install", "acme/tools@widget-press", "--force", "--matched", matchedArg!],
+      ["install", pkgArg!, "--force", "--matched", matchedArg!],
       { home },
     );
     expect(installed.code).toBe(0);

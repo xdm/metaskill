@@ -75,7 +75,7 @@ Between pressing Enter and Claude's first token:
   anthropics/claude-agent-sdk-demos@xlsx (159 installs, scan=clean, relevance=0.94) [ask: needs your yes — auto-install is off; publisher anthropics is allowlisted, scan clean]
     Comprehensive spreadsheet creation, editing, and analysis with support for formulas, formatting, data analysis, and visualization. When Clau
 Ask the user: Install aiskillstore/marketplace@xlsx (237 installs, publisher aiskillstore, scan unknown) for this task? yes/no
-Install only on the user's explicit yes: "/Users/you/.nvm/versions/node/v24.17.0/bin/node" "/Users/you/.metaskill/bin/dist/cli.js" install <pkg> --force --matched "xlsx export formulas"
+Install only on the user's explicit yes: "/Users/you/.nvm/versions/node/v24.17.0/bin/node" "/Users/you/.metaskill/bin/dist/cli.js" install aiskillstore/marketplace@xlsx --force --matched "xlsx export formulas"
 ```
 
 4. **`find` installs nothing. It ranks, vets, and stops.** Each row carries
@@ -149,9 +149,10 @@ What backs it up:
   scan, live, before deciding.
 - **`find` never installs.** It ranks the local index, runs each candidate
   past the policy, prints the shortlist with a verdict per row, and stops.
-  The division of labour is deliberate: code ranks, the model picks (only it
-  can tell whether a highly-ranked row actually answers the task), and
-  `metaskill install` enforces the policy on what it picked. An earlier
+  The division of labour is deliberate: code ranks and applies the relevance
+  rule, Claude relays the line it prints (and judges the borderline band,
+  where only a reader who understands the task can tell), and
+  `metaskill install` enforces the policy on that package. An earlier
   version let the top-ranked hit install itself, and BM25 duly installed
   third-party skills for prompts like "say hello".
 - **`deny` cannot be bypassed by any flag — install, update, or the

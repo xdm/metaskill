@@ -34,8 +34,9 @@ derive it from the task rather than translating the prompt.
 
 `find` ranks and vets; it **never installs**. It prints the top candidates
 with their install count, scan verdict, relevance and policy decision, and
-stops there — the division of labour is that code ranks, you pick, and the
-`install` subcommand enforces the policy on what you picked. Nothing reaches
+stops there — the division of labour is that code ranks and applies the rule
+below, you relay the line it prints, and the `install` subcommand enforces
+the policy on the package that line names. Nothing reaches
 disk without the user's explicit yes, unless they have opted in by setting
 `trust.auto_install: true` in `~/.metaskill/metaskill.yaml` (off by default,
 and even then it is `install` that acts, never `find`).
@@ -77,8 +78,6 @@ Act on what it prints:
   that no skill exists. Run `find` once more, or solve the task without one.
 - **`No skills found`** — solve the task yourself, and say nothing about
   metaskill.
-
-Do not install anything outside that command.
 
 ## On "Plugin available"
 

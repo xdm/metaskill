@@ -300,6 +300,24 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
         : topAsk.rel >= RELEVANCE_BANDS.judge
           ? `Borderline match (relevance ${topAsk.rel.toFixed(2)}) — judge whether ${topAsk.r.pkg} fits before asking.\n`
           : `Weak matches only (top relevance ${topAsk.rel.toFixed(2)}) — solve the task yourself.\n`;
+    // Below the judge band there is nothing to install, so no install command
+    // is printed. Left in place it was the only actionable line on screen,
+    // one line under "solve the task yourself" and with exactly one askable
+    // package named above it — the contradiction the bands exist to remove,
+    // reproduced inside the band. Every other case keeps the line: the
+    // borderline cue ends in "then ask", the ask band has its question, and
+    // with no row named (all askable rows `auto`, the knob on) the template
+    // is all there is to print.
+    //
+    // The package is the concrete one the line above names, not `<pkg>`.
+    // Rule 1 of SKILL.md is "run the command as printed", and a placeholder
+    // is a command the model has to edit before running — which is how a
+    // wrong package, or a refusal to run it at all, gets in. The live branch
+    // has always printed the real package; these two branches now agree.
+    const installLine =
+      topAsk && topAsk.rel < RELEVANCE_BANDS.judge
+        ? ""
+        : `Install only on the user's explicit yes: ${metaskillCmd()} install ${topAsk?.r.pkg ?? "<pkg>"} --force --matched "${q}"\n`;
     process.stdout.write(
       // No judgement in the header. It used to open by asking the model to
       // rule on whether any row fitted, and to fall back on itself if none
@@ -319,7 +337,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
         // query into the lock on a confirmed install, so a repeat of it
         // short-circuits here next time via alreadyPresent's lock check above
         // — see install.ts.
-        `\n${verdictLine}Install only on the user's explicit yes: ${metaskillCmd()} install <pkg> --force --matched "${q}"\n${deniedBlock}${pluginLine}`,
+        `\n${verdictLine}${installLine}${deniedBlock}${pluginLine}`,
     );
     logFind([], [...askable, ...denied].map(toDiscovered));
     return 0;
