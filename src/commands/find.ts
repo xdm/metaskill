@@ -94,8 +94,22 @@ function line(r: IndexRecord, relevance: number, decision: string, reason: strin
 // Plain fields, not an IndexRecord, because the live-fallback branch has no
 // record — only a Candidate — and the protocol now promises the model a
 // printed question on BOTH branches. One function, one sentence shape.
+//
+// Split in two so the borderline band can hand over the SAME sentence without
+// the `Ask the user:` label. The label is bound to `relevance` >= 1.0 in all
+// three documents and cross-checked by test/protocol.test.ts; printing it at
+// 0.85 would tell the model "relay this" exactly where the rule says "judge
+// first", which is the pre-band pathology in miniature. What the borderline
+// band was missing is not the label, it is the sentence: at 0.85 on the
+// second real v2 use the model judged correctly and then had to compose the
+// question itself, and what it composed arrived as the last line of an answer
+// it had already begun.
+function questionSentence(pkg: string, installs: string, publisher: string, scan: string): string {
+  return `Install ${pkg} (${installs} installs, publisher ${publisher}, scan ${scan}) for this task? yes/no`;
+}
+
 function questionLine(pkg: string, installs: string, publisher: string, scan: string): string {
-  return `Ask the user: Install ${pkg} (${installs} installs, publisher ${publisher}, scan ${scan}) for this task? yes/no`;
+  return `Ask the user: ${questionSentence(pkg, installs, publisher, scan)}`;
 }
 
 // find is invoked directly by the in-session model via Bash, with no human
@@ -298,23 +312,29 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       : topAsk.rel >= RELEVANCE_BANDS.ask
         ? `${questionLine(topAsk.r.pkg, installsLabel(topAsk.r), publisherOf(topAsk.r.pkg), topAsk.r.scan)}\n`
         : topAsk.rel >= RELEVANCE_BANDS.judge
-          ? `Borderline match (relevance ${topAsk.rel.toFixed(2)}) — judge whether ${topAsk.r.pkg} fits, then ask first.\n`
+          ? `Borderline match (relevance ${topAsk.rel.toFixed(2)}) — judge whether ${topAsk.r.pkg} fits. ` +
+            `If it does, ask exactly this, first, and nothing else: ` +
+            `${questionSentence(topAsk.r.pkg, installsLabel(topAsk.r), publisherOf(topAsk.r.pkg), topAsk.r.scan)}\n`
           : `Weak matches only (top relevance ${topAsk.rel.toFixed(2)}) — solve the task yourself.\n`;
     // Below the judge band there is nothing to install, so no install command
     // is printed. Left in place it was the only actionable line on screen,
     // one line under "solve the task yourself" and with exactly one askable
     // package named above it — the contradiction the bands exist to remove,
     // reproduced inside the band. Every other case keeps the line: the
-    // borderline cue ends in "then ask first", the ask band has its question,
-    // and with no row named (all askable rows `auto`, the knob on) the
+    // borderline cue now ends in a question to ask, the ask band has its
+    // own, and with no row named (all askable rows `auto`, the knob on) the
     // template is all there is to print.
     //
-    // "then ask first", not "before asking": the borderline band's cue used
-    // to leave the ordering open, and a model that judged a 0.85 row to fit
-    // asked at the END of an answer it had already given. The three documents
-    // that carry this rule — this line, the header above, and the protocol
-    // block — say "first" in the same words, or the one the model reads in
-    // the decision turn is the one that is silent about it.
+    // The borderline cue says WHEN as well as whether: "judge whether X
+    // fits. If it does, ask exactly this, first, and nothing else: …". It
+    // used to read "judge whether X fits before asking", an ordering a model
+    // satisfies by asking at the end of an answer it has already given —
+    // which is what happened at 0.85 on the second real v2 use. Judgement
+    // stays in front of the sentence, so the band still costs a decision;
+    // what it no longer costs is composing the question after making it.
+    // The three documents that carry this rule — this line, the header
+    // above, and the protocol block — say "first" in the same words, and
+    // test/protocol.test.ts fails if the header and the block drift apart.
     //
     // The package is the concrete one the line above names, not `<pkg>`.
     // Rule 1 of SKILL.md is "run the command as printed", and a placeholder

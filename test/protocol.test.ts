@@ -176,8 +176,34 @@ describe("protocolText", () => {
     const t = flat();
     expect(t).toMatch(/AskUserQuestion/);
     expect(t).toMatch(/if you have it/i);
-    expect(t).toContain("`Install <pkg>` / `No`");
+    // The option LABEL is the skill name, and the package — 55 chars for the
+    // row in the incident — goes in the description, where it still reaches
+    // the user. A label that renders as `Install ailabs-393/ai-labs-clau…`
+    // is a choice the user cannot read.
+    expect(t).toContain("`Install <skill name>` / `No`");
+    expect(t).toMatch(/package\s+in the description/i);
     expect(t).toMatch(/one line of text and nothing else/i);
+  });
+
+  it("says 'then ask first' in find.ts's own header too, not only here", () => {
+    // The header is the first sentence of the tool result — the copy of this
+    // rule the model reads IN the decision turn, above everything the block
+    // says. It could be reverted to "then ask" with every test still green:
+    // the cross-check pinned find.ts's LABELS and never the clause. Now the
+    // two documents share one substring or this fails.
+    const clause = "judge whether it fits, then ask first";
+    expect(flat(), `protocol says "${clause}"`).toContain(clause);
+    expect(FIND_SRC, `find.ts's header says "${clause}"`).toContain(clause);
+  });
+
+  it("hands the borderline band a sentence, in the words all three documents use", () => {
+    // The band that failed is the one that had no ready-made question: at
+    // 0.85 the model judged correctly and then had to compose one. `find`
+    // now prints it after the cue — WITHOUT the `Ask the user:` label, which
+    // stays bound to >= 1.0 (see the label cross-check above).
+    const phrase = "ask exactly this, first, and nothing else";
+    expect(FIND_SRC, `find.ts prints "${phrase}"`).toContain(phrase);
+    expect(SKILL_MD.replace(/\s+/g, " "), `SKILL.md quotes "${phrase}"`).toContain(phrase);
   });
 
   it("quotes the same two numbers find.ts bands on", () => {
@@ -291,12 +317,18 @@ describe("skills/metaskill/SKILL.md", () => {
     // The two documents disagreeing about WHEN and HOW to ask is the same
     // defect as either of them being silent: the model reads whichever it
     // has. Both phrases, in both places.
-    for (const re of [/before you start the task/i, /AskUserQuestion/, /not inside an answer/i]) {
+    for (const re of [
+      /before you start the task/i,
+      /AskUserQuestion/,
+      /not inside an answer/i,
+      /`Install <skill name>`/,
+      /package in (the|its) description/i,
+    ]) {
       expect(flatMd, `SKILL.md matches ${re}`).toMatch(re);
       expect(protocolText().replace(/\s+/g, " "), `protocol matches ${re}`).toMatch(re);
     }
     // The borderline band asks too, and asks first — not "only if it does".
-    expect(flatMd).toMatch(/`Borderline match`.{0,140}\bfirst\b/);
+    expect(flatMd).toMatch(/`Borderline match`.{0,220}\bfirst\b/);
   });
 
   it("covers every branch the protocol block covers", () => {

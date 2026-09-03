@@ -64,33 +64,36 @@ Between pressing Enter and Claude's first token:
 
 ```
 [metaskill] Top matches for "xlsx export formulas" — find does not install. The line under the rows has applied the relevance rule to the top row you could install: `Ask the user:` (relevance >= 1.0) — put that question to the user before anything else; `Borderline match` — judge whether it fits, then ask first; `Weak matches only` (under 0.5) — solve the task yourself.
-  aiskillstore/marketplace@xlsx (237 installs, scan=unknown, relevance=1.12) [ask: needs your yes — publisher aiskillstore not allowlisted]
+  aiskillstore/marketplace@xlsx (237 installs, scan=unknown, relevance=0.90) [ask: needs your yes — publisher aiskillstore not allowlisted]
     Spreadsheet toolkit (.xlsx/.csv). Create/edit with formulas/formatting, analyze data, visualization, recalculate formulas, for spreadsheet p
-  davila7/claude-code-templates@xlsx (949 installs, scan=clean, relevance=1.12) [ask: needs your yes — publisher davila7 not allowlisted]
+  davila7/claude-code-templates@xlsx (949 installs, scan=clean, relevance=0.90) [ask: needs your yes — publisher davila7 not allowlisted]
     Spreadsheet toolkit (.xlsx/.csv). Create/edit with formulas/formatting, analyze data, visualization, recalculate formulas, for spreadsheet p
-  aaaaqwq/agi-super-team@xlsx (~0 est installs, scan=clean, relevance=0.94) [ask: needs your yes — no real install count (0 estimated from siblings)]
+  datadrivenconstruction/ddc_skills_for_ai_agents_in_construction@xlsx-construction (101 installs, scan=unknown, relevance=0.69) [ask: needs your yes — publisher datadrivenconstruction not allowlisted]
+    Excel/spreadsheet processing for construction: estimates, schedules, tracking logs, quantity takeoffs. Formulas, formatting, analysis.
+  vasilyu1983/ai-agents-public@document-xlsx (841 installs, scan=clean, relevance=0.68) [ask: needs your yes — publisher vasilyu1983 not allowlisted]
+    Create/edit .xlsx spreadsheets with tables, formulas, charts, validation, and workbook automation. Use when asked to generate Excel reports,
+  ailabs-393/ai-labs-claude-skills@xlsx (876 installs, scan=clean, relevance=0.67) [ask: needs your yes — publisher ailabs-393 not allowlisted]
     Comprehensive spreadsheet creation, editing, and analysis with support for formulas, formatting, data analysis, and visualization. When Clau
-  ailabs-393/ai-labs-claude-skills@xlsx (876 installs, scan=clean, relevance=0.94) [ask: needs your yes — publisher ailabs-393 not allowlisted]
-    Comprehensive spreadsheet creation, editing, and analysis with support for formulas, formatting, data analysis, and visualization. When Clau
-  anthropics/claude-agent-sdk-demos@xlsx (159 installs, scan=clean, relevance=0.94) [ask: needs your yes — auto-install is off; publisher anthropics is allowlisted, scan clean]
-    Comprehensive spreadsheet creation, editing, and analysis with support for formulas, formatting, data analysis, and visualization. When Clau
-Ask the user: Install aiskillstore/marketplace@xlsx (237 installs, publisher aiskillstore, scan unknown) for this task? yes/no
+Borderline match (relevance 0.90) — judge whether aiskillstore/marketplace@xlsx fits. If it does, ask exactly this, first, and nothing else: Install aiskillstore/marketplace@xlsx (237 installs, publisher aiskillstore, scan unknown) for this task? yes/no
 Install only on the user's explicit yes: "/Users/you/.nvm/versions/node/v24.17.0/bin/node" "/Users/you/.metaskill/bin/dist/cli.js" install aiskillstore/marketplace@xlsx --force --matched "xlsx export formulas"
 ```
 
 4. **`find` installs nothing. It ranks, vets, and stops.** Each row carries
    its install count, scan verdict, `relevance` (how much of the query the
    row matched, on a scale that means the same thing whatever index you have
-   loaded) and the policy's verdict. The last row is allowlisted with a clean
-   scan, and reads `auto-install is off` because that is the shipped default:
-   the verdict is computed in full, then held for your yes.
-5. The last line is the one Claude acts on. Above 1.0 relevance the question
-   is written out for it — package, publisher, install count, scan verdict —
-   because a question Claude has to compose is a question it talks itself out
-   of asking. Between 0.5 and 1.0 it gets `Borderline match` and has to judge
-   the row first; below 0.5, `Weak matches only` and it solves the task
-   itself. Nothing installs without your explicit yes, with the command that
-   line printed.
+   loaded) and the policy's verdict. Every row here reads `needs your yes`
+   because none of these publishers is allowlisted; an allowlisted publisher
+   with a clean scan reads `auto-install is off` instead — the shipped
+   default, where the verdict is computed in full and then held for your yes.
+5. The last line is the one Claude acts on, and it is banded on `relevance`.
+   The top row here is 0.90 — `Borderline match` — so Claude has to judge
+   whether the row really fits, and only then asks, before it starts the
+   task. At 1.0 and above the line is the question itself (`Ask the user:`).
+   Below 0.5 it reads `Weak matches only` and Claude solves the task alone.
+   Either way the question is written out for it — package, publisher,
+   install count, scan verdict — because a question Claude has to compose is
+   a question it talks itself out of asking. Nothing installs without your
+   explicit yes, with the command that line printed.
 
 A local index hit like this is one fast subprocess call; installing a skill —
 or, on an index miss, the one live registry search, capped at 4 seconds — is

@@ -91,7 +91,15 @@ import { metaskillCmd } from "./paths.js";
 //     real yes/no choice, and it used prose instead. The instruction is
 //     conditional because the tool is — it exists in an interactive session,
 //     not in every harness — and the fallback names the property that failed:
-//     one line of text and NOTHING else in that turn.
+//     one line of text and NOTHING else in that turn. The option LABEL is the
+//     skill name, not the package: real packages here run to 55 chars
+//     (`ailabs-393/ai-labs-claude-skills@nutritional-specialist`), which no
+//     option label renders, so the package goes in the option's description
+//     where the user can still read what they are saying yes to.
+//   - The query is "not translated". Both live incidents arrived as Russian
+//     prompts, and a model that translates the prompt instead of naming the
+//     capability searches for the user's phrasing rather than the artefact.
+//     The contrast is two words and it earns them.
 //   - `Registry did not answer` is listed separately from `No skills found`.
 //     A live lookup that timed out is not evidence that no skill exists, and a
 //     model given one label for both facts will report a coverage gap it never
@@ -118,26 +126,26 @@ export function protocolText(): string {
     "Once per task, not per session; pure chat is exempt.",
     "",
     "It never installs: nothing reaches disk without the user's explicit yes,",
-    "unless they set `trust.auto_install: true`.",
+    "unless `trust.auto_install: true`.",
     "",
     "The prompt may be in any language; the query is always English, from the",
-    "task. Name the artefact or domain, not the action: a format, framework,",
-    "or craft like SEO.",
+    "task, not translated. Name the artefact or domain, not the action: a",
+    "format, framework, or craft like SEO.",
     "",
-    "Ask FIRST: before you start the task, not inside an answer. Use the",
-    "AskUserQuestion tool if you have it (`Install <pkg>` / `No`), else one",
-    "line of text and nothing else.",
+    "Ask FIRST: before you start the task, not inside an answer. Use",
+    "AskUserQuestion if you have it (`Install <skill name>` / `No`, package",
+    "in the description), else one line of text and nothing else.",
     "",
     "Act on what it prints:",
-    "- `Already present:` — read that SKILL.md, follow it.",
+    "- `Already present:` — read and follow that SKILL.md.",
     "- `Top matches` — the line under the rows decides: `Ask the user:`",
     "  (`relevance` >= 1.0) — put it to the user before anything else;",
     "  `Borderline match` — judge whether it fits, then ask first;",
-    "  `Weak matches only` (under 0.5) — a low `relevance`: it barely",
-    "  matched, so decline it in silence.",
+    "  `Weak matches only` (under 0.5) — a low `relevance`: barely matched,",
+    "  so decline it in silence.",
     "- `live search found` — no band: relay its question.",
-    "- `Refused by policy` — never offer these; no flag installs them.",
-    "- `Registry did not answer` — not a miss; retry once.",
+    "- `Refused by policy` — never offer these.",
+    "- `Registry did not answer` — not a miss; retry.",
     "- `No skills found` — solve it yourself, silently.",
   ].join("\n");
 }

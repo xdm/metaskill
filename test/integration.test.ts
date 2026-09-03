@@ -487,14 +487,22 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     const rel = topRelevance(r.stdout, "someorg/repo@snorklex");
     expect(rel).toBeGreaterThanOrEqual(0.5);
     expect(rel).toBeLessThan(1);
-    // The point of the band: no ready-made question to relay without
-    // thinking — but the ordering is not left open either. "before asking"
-    // was satisfied by a model that judged the row to fit and then asked at
-    // the end of an answer it had already given (0.85, second real v2 use),
-    // so the cue names when: first.
+    // Judgement first, then the finished sentence. "before asking" was
+    // satisfied by a model that judged the row to fit and then asked at the
+    // end of an answer it had already given (0.85, second real v2 use), so
+    // the cue names when — first — and hands over the words, because the one
+    // band with no ready-made question is the band that failed. The
+    // `Ask the user:` label stays out of it: that label is bound to
+    // `relevance` >= 1.0 in all three documents, and printing it here would
+    // read as "relay this" exactly where the rule says "judge first".
     expect(verdictLines(r.stdout)).toEqual([
-      "Borderline match (relevance 0.53) — judge whether someorg/repo@snorklex fits, then ask first.",
+      "Borderline match (relevance 0.53) — judge whether someorg/repo@snorklex fits. " +
+        "If it does, ask exactly this, first, and nothing else: " +
+        "Install someorg/repo@snorklex (42 installs, publisher someorg, scan clean) for this task? yes/no",
     ]);
+    // The label belongs to the band above this one, and the header names all
+    // three bands, so this reads the printed lines, not the whole screen.
+    expect(r.stdout.split("\n").filter((l) => l.startsWith("Ask the user:"))).toEqual([]);
     // ...and the row is still printed, with its number. Bands gate the
     // action, never the list.
     expect(r.stdout).toContain("someorg/repo@snorklex (42 installs, scan=clean, relevance=0.53)");
@@ -506,6 +514,20 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     fs.rmSync(home, { recursive: true, force: true });
   });
 
+  it("README quotes the header find actually prints", async () => {
+    // README's walkthrough pastes find's output verbatim, and nothing checked
+    // it: the relevance-rule clause in the header could drift in either
+    // document — and did, the moment the borderline cue changed. Only the
+    // query differs between the sample and a real run, so only that is
+    // substituted.
+    const home = freshHome("readme-header");
+    const r = await runCli(["find", "snorklex processor", "--index", bandIndex(home)], { home });
+    const header = r.stdout.split("\n")[0]!.replace('"snorklex processor"', '"xlsx export formulas"');
+    expect(header).toContain("Top matches for");
+    expect(fs.readFileSync(path.join(ROOT, "README.md"), "utf8")).toContain(header);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
   it("band < 0.5: says solve it yourself, and no question", async () => {
     const home = freshHome("find-band-weak");
     const r = await runCli(["find", "snorklex zorbulon flimscape", "--index", bandIndex(home)], { home });
@@ -513,6 +535,12 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     expect(verdictLines(r.stdout)).toEqual([
       "Weak matches only (top relevance 0.31) — solve the task yourself.",
     ]);
+    // No question in any form down here: neither the labelled one nor the
+    // bare sentence the borderline band hands over. (The header names every
+    // band, so the label is read off the printed lines, not the screen.)
+    expect(r.stdout.split("\n").filter((l) => l.startsWith("Ask the user:"))).toEqual([]);
+    expect(r.stdout).not.toContain("ask exactly this");
+    expect(r.stdout).not.toContain("for this task? yes/no");
     // ...and no install command under it. Left in place it was the only
     // actionable line on screen, one line below "solve the task yourself",
     // with exactly one askable package named above it.

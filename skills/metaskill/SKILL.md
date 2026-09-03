@@ -18,34 +18,34 @@ below).
 exactly ONE short question to the user — what the skill is, who publishes it,
 how many installs, why the task needs it — and on an explicit yes re-run the
 `install <pkg> --force` command exactly as it was printed (see Rules). No
-answer, or no clear yes, means solve the task without it; never install on an
-assumed or implied approval.
+clear yes means solve the task without it; never install on an assumed or
+implied approval.
 
 ## On `find`
 
 Every session opens with a `[metaskill] Standing protocol` block naming a
-`find` command. It stands whether or not this skill is loaded: at the start of
-every task, before you begin work, derive a 2-4 word English capability phrase
+`find` command. It stands with or without this skill: at the start of every
+task, before you begin work, derive a 2-4 word English capability phrase
 from the task ("reddit automation", "invoice ocr") and run that command via
 Bash. Run it even when you are sure no skill is needed — checking that is its
 job. Once per task, not once per session; only pure conversation is exempt.
-The prompt may be in any language; the query is always English, from the task.
+The prompt may be in any language; the query is always English: derive it
+from the task, never translate the prompt.
 
 `find` ranks and vets; it **never installs**. It prints the top candidates
 with their install count, scan verdict, relevance and policy decision, and
 stops there — code ranks and applies the rule below, you relay the line it
 prints, and `install` enforces policy on the package it names. Nothing reaches
-disk without the user's explicit yes, unless they have opted in by setting
-`trust.auto_install: true` in `~/.metaskill/metaskill.yaml` (off by default).
+disk without the user's explicit yes, unless they set `trust.auto_install:
+true` in `~/.metaskill/metaskill.yaml` (off by default).
 
-`relevance` is BM25's report of how much of your query a row matched, on a
-scale that means the same thing whatever index is loaded. A full match sits
-around 1.0 or above; a low `relevance` means the row barely matched the words
-— decline it.
+`relevance` is BM25's report of how much of your query a row matched. A full
+match sits around 1.0 or above; a low `relevance` means the row barely matched
+the words — decline it.
 
-The number on the row `find` singles out decides what happens next, and it is
-a rule, not a call you make. `find` applies it for you: under the rows it
-prints exactly one line, about the top row you could still install.
+The number on the row `find` singles out decides what happens next; it is a
+rule, not a call you make. `find` applies it: under the rows it prints exactly
+one line, about the top row you could still install.
 
 - **`Ask the user: Install ... ? yes/no`** (`relevance` >= 1.0) — put that
   question to the user, before anything else. Not left unasked because you
@@ -53,17 +53,19 @@ prints exactly one line, about the top row you could still install.
   question is for. The line already names the package, its install count, its
   publisher and its scan verdict, so relay it as printed.
 - **`Borderline match`** (`relevance` >= 0.5) — judge whether that row really
-  fits the task; if it does, ask about it the same way, first.
+  fits the task. The cue prints the question for you — "ask exactly this,
+  first, and nothing else: ..." — so if it fits, ask that, first.
 - **`Weak matches only`** (under 0.5) — decline and say nothing. The row
   shares a word with your query and little else.
 
 Asking means asking before you start the task, not inside an answer you have
-already begun: use the `AskUserQuestion` tool if you have it (options
-`Install <pkg>` / `No`), else send one line of text and nothing else.
+already begun: use the `AskUserQuestion` tool if you have it — option label
+`Install <skill name>`, the full package in its description, `No` as the
+other option — else send one line of text and nothing else.
 
 A **`live search found`** hit is different: the registry returns no relevance,
 so there is no band to apply, and with no scan verdict it is always `ask`. It
-always prints its question — relay that one too.
+always prints its question — ask that one the same way.
 
 Act on what it prints:
 
@@ -81,11 +83,11 @@ Act on what it prints:
 
 ## On "Plugin available"
 
-A Claude Code plugin can carry hooks, MCP servers and tooling that a skill
-cannot, so metaskill suggests one but never installs it. Ask the user one
-question (what it is, who publishes it, why the task needs it) and only on an
-explicit yes run the `/plugin install <name>@<marketplace>` command from the
-line. Never install a plugin on an assumed approval.
+A plugin can carry hooks, MCP servers and tooling a skill cannot, so metaskill
+suggests one but never installs it. Ask one question the same way (what it is,
+who publishes it, why the task needs it) and only on an explicit yes run the
+`/plugin install <name>@<marketplace>` command from the line. Never on an
+assumed approval.
 
 ## Rules
 
