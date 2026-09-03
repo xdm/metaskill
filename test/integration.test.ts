@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { loadIndex, normaliseQuery, search } from "../src/index/read.js";
 
 const ROOT = path.resolve(__dirname, "..");
 const CLI = path.join(ROOT, "dist", "cli.js");
@@ -469,13 +470,22 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
   const verdictLines = (stdout: string): string[] =>
     stdout
       .split("\n")
-      .filter((l) => /^(Ask the user: Install|Borderline match|Weak matches only)/.test(l));
+      .filter((l) => /^(Likely fit|Ask the user: Install|Borderline match|Weak matches only)/.test(l));
 
-  it("band >= 1.0: prints the question and nothing else", async () => {
+  it("band >= 1.0: the description check, then the question, and nothing else", async () => {
+    // The question still prints, unchanged and ready to relay — it is the
+    // relay when the answer is yes, and composing it was the step the model
+    // skipped on the first real v2 lookup. What is new above it is the one
+    // check the score cannot make: 26 of 47 everyday queries land in this
+    // band against the live index, and most of those top rows are homonyms
+    // ("insomnia help" -> a REST client called insomnia). The cue names both
+    // outcomes, so neither is a slot for "I could just do this myself".
     const home = freshHome("find-band-ask");
     const r = await runCli(["find", "snorklex processor", "--index", bandIndex(home)], { home });
     expect(topRelevance(r.stdout, "someorg/repo@snorklex")).toBeGreaterThanOrEqual(1);
     expect(verdictLines(r.stdout)).toEqual([
+      "Likely fit (relevance 1.40) — read the row's description first: if it fits the task, ask the question below, " +
+        "first, via the tool if you have it; if it is a different thing with the same word, say nothing and solve the task.",
       "Ask the user: Install someorg/repo@snorklex (42 installs, publisher someorg, scan clean) for this task? yes/no",
     ]);
     fs.rmSync(home, { recursive: true, force: true });
@@ -497,7 +507,7 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     // read as "relay this" exactly where the rule says "judge first".
     expect(verdictLines(r.stdout)).toEqual([
       "Borderline match (relevance 0.53) — judge whether someorg/repo@snorklex fits. " +
-        "If it does, ask exactly this, first, and nothing else: " +
+        "If it does, ask exactly this, first — via the tool if you have it, else as one line and nothing else: " +
         "Install someorg/repo@snorklex (42 installs, publisher someorg, scan clean) for this task? yes/no",
     ]);
     // The label belongs to the band above this one, and the header names all
@@ -648,6 +658,57 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     expect(r3.stdout).not.toContain("sprocketamatic-ghost");
     expect(r3.stdout).toContain("[ask: needs your yes — auto-install is off;");
     fs.rmSync(home, { recursive: true, force: true });
+  });
+});
+
+// Everyday life and work queries, ranked against the SHIPPED SNAPSHOT, with
+// the top package recorded once by hand (test/fixtures/everyday-queries.json)
+// so ranking drift on them is loud rather than silent.
+//
+// Every other ranking test in this file builds a 2-4 row index and asserts a
+// property of the algorithm. None of them can see what a real 4,831-skill
+// corpus does to "insomnia help" or "stress management" — and that is where
+// the interesting failure lives: a rare query word carries high idf, so the
+// wrong sense of it outranks everything, and BM25 has no way to know. The
+// fixture is the measurement; the wording change in task 18 is the response
+// to it, and this test is what tells us when the measurement moves.
+//
+// The snapshot is gitignored (built by `npm run snapshot` at publish time),
+// so this SKIPS rather than fails where it is absent — a CI checkout must not
+// go red over a file it was never given.
+describe("find: everyday queries against the shipped snapshot (golden fixture)", () => {
+  const SNAPSHOT = path.join(ROOT, "index-snapshot.json");
+  const fixture = JSON.parse(
+    fs.readFileSync(path.join(ROOT, "test", "fixtures", "everyday-queries.json"), "utf8"),
+  ) as { note: string; queries: { query: string; pkg: string | null; homonym: boolean }[] };
+
+  it("keeps the 47-query probe intact, with its hand-set homonym flags", () => {
+    expect(fixture.queries).toHaveLength(47);
+    expect(new Set(fixture.queries.map((q) => q.query)).size).toBe(47);
+    for (const q of fixture.queries) expect(typeof q.homonym, q.query).toBe("boolean");
+    // The finding this fixture exists to record: most everyday queries land on
+    // a package that is a different thing wearing the same word. If a future
+    // index makes that mostly false, the protocol's description check has
+    // stopped earning its budget and someone should say so deliberately.
+    expect(fixture.queries.filter((q) => q.homonym).length).toBeGreaterThan(
+      fixture.queries.length / 2,
+    );
+  });
+
+  it("ranks every fixture query to the package the fixture recorded", (ctx) => {
+    if (!fs.existsSync(SNAPSHOT)) {
+      ctx.skip(`${SNAPSHOT} is absent — run \`npm run snapshot\` to check everyday-query ranking drift`);
+      return;
+    }
+    // The snapshot by explicit path, never loadIndex()'s default lookup: this
+    // must not silently rank against a developer's ~/.metaskill/index.json.
+    const index = loadIndex(SNAPSHOT);
+    expect(index, "the snapshot parsed as an index").not.toBeNull();
+    const actual = fixture.queries.map((q) => ({
+      query: q.query,
+      pkg: search(index!, normaliseQuery(q.query), 5)[0]?.record.pkg ?? null,
+    }));
+    expect(actual).toEqual(fixture.queries.map((q) => ({ query: q.query, pkg: q.pkg })));
   });
 });
 

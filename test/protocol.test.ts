@@ -147,10 +147,59 @@ describe("protocolText", () => {
     // measured distributions (see src/protocol.ts).
     const t = flat();
     expect(t).toMatch(/`relevance` >= 1\.0/);
-    expect(t).toMatch(/before anything else/i);
     expect(t).toMatch(/0\.5/);
     expect(t).not.toMatch(/judge which row/i);
     expect(t).not.toMatch(/if none does, solve it yourself/i);
+  });
+
+  it("makes the >= 1.0 band read the row's description before it relays anything", () => {
+    // A 47-query probe of everyday life and work phrases against the live
+    // index put 26 of them in the >= 1.0 band, and many of those top rows are
+    // homonyms BM25 cannot see: "insomnia help" -> insomnia-collection-
+    // generator (a REST client, 1.28), "stress management" -> stress-test
+    // (load testing, 1.20), "time management" -> itinerary-optimizer,
+    // "language learning" -> vision-sft. A rare query word carries high idf,
+    // so the wrong sense of it scores HIGH — and the old rule ("put that
+    // question to the user before anything else") mandated asking "Install
+    // insomnia-collection-generator?" on a sleep question.
+    //
+    // The fix is not to hand back the judgement the bands took away: what
+    // stopped the first incident was the ready-made sentence, "ask first",
+    // and the closed escape hatch. It is ONE specific check the model can
+    // actually make and the score cannot — does the printed description
+    // describe this task? — with both outcomes named, so neither is a slot
+    // for "I've got this".
+    const t = flat();
+    expect(t).not.toMatch(/before anything else/i);
+    expect(t).toMatch(/likely fit/i);
+    expect(t).toContain("read the row's description");
+    // ...and the band still ends in an ask, not in a free choice.
+    expect(t).toMatch(/ask it first/i);
+    // The same check, in the two documents the model reads in the decision
+    // turn and afterwards. find.ts's copy is the one on screen when it acts.
+    expect(FIND_SRC, "find.ts states the description check").toContain("read the row's description");
+    expect(SKILL_MD.replace(/\s+/g, " "), "SKILL.md states the description check").toContain(
+      "read the row's description",
+    );
+    // The homonym itself is named in the two documents with room for it —
+    // find.ts's cue is what the model has on screen in the turn it decides,
+    // and SKILL.md is the reference. The injected block carries the rule in
+    // its shortest true form ("else say nothing"): it is budgeted per
+    // session, and the gloss is the first thing that has to give.
+    for (const doc of [FIND_SRC.replace(/\s+/g, " "), SKILL_MD.replace(/\s+/g, " ")]) {
+      expect(doc).toContain("a different thing with the same word");
+    }
+  });
+
+  it("names life and work domains, not only IT, when it says what to query for", () => {
+    // The same probe: a block whose only examples are formats, frameworks and
+    // "a craft like SEO" tells a model that `find` is for engineering tasks,
+    // which is how "meal prep" or "salary negotiation" never gets a query at
+    // all. The registry carries skills for both.
+    const t = flat();
+    for (const kind of ["health", "money", "career", "cooking", "travel", "learning"]) {
+      expect(t, `protocol names "${kind}"`).toContain(kind);
+    }
   });
 
   it("puts the ask before any task work, in BOTH asking bands", () => {
@@ -201,9 +250,16 @@ describe("protocolText", () => {
     // 0.85 the model judged correctly and then had to compose one. `find`
     // now prints it after the cue — WITHOUT the `Ask the user:` label, which
     // stays bound to >= 1.0 (see the label cross-check above).
-    const phrase = "ask exactly this, first, and nothing else";
+    //
+    // "and nothing else" was true of the text fallback and false of the tool
+    // path, which necessarily splits the sentence into an option label and a
+    // description — an instruction the model cannot obey with the tool the
+    // protocol tells it to prefer. The cue now names both ways of asking, in
+    // the same order the block does.
+    const phrase = "ask exactly this, first — via the tool if you have it, else as one line and nothing else";
     expect(FIND_SRC, `find.ts prints "${phrase}"`).toContain(phrase);
     expect(SKILL_MD.replace(/\s+/g, " "), `SKILL.md quotes "${phrase}"`).toContain(phrase);
+    expect(FIND_SRC, "the old absolute wording is gone").not.toContain("ask exactly this, first, and nothing else");
   });
 
   it("quotes the same two numbers find.ts bands on", () => {
@@ -295,7 +351,12 @@ describe("skills/metaskill/SKILL.md", () => {
     // the user is ever asked at all. A SKILL.md that still says "decide which
     // row, if any, actually fits" hands the judgement back to a model that
     // reads it instead of the block.
-    for (const re of [/`relevance` >= 1\.0/, /before anything else/i, /0\.5/]) {
+    // `before anything else` used to be in this list. It is gone from both
+    // documents deliberately: at >= 1.0 the model now reads the row's
+    // description first (see the band test above), because a homonym scores
+    // high exactly when its shared word is rare. What replaces it is a
+    // check, not a discretion — the band still ends in an ask.
+    for (const re of [/`relevance` >= 1\.0/, /likely fit/i, /read the row's description/, /0\.5/]) {
       expect(flatMd, `SKILL.md matches ${re}`).toMatch(re);
       expect(protocolText().replace(/\s+/g, " "), `protocol matches ${re}`).toMatch(re);
     }

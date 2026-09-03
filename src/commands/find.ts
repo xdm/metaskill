@@ -305,15 +305,38 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     // same ready-to-relay sentence as a 1.58 one — so the cheapest action was
     // "ask" exactly where the rule says be silent, and the line carried no
     // number for the model to catch itself on. Now the row's own relevance
-    // picks which of three lines is printed, and each one names the number it
-    // was decided on. `find` still installs nothing on any band.
+    // picks which band's verdict is printed, and every one of them names the
+    // number it was decided on. `find` still installs nothing on any band.
     const verdictLine = !topAsk
       ? "" // every askable row is `auto` (the knob is on): no question to ask
       : topAsk.rel >= RELEVANCE_BANDS.ask
-        ? `${questionLine(topAsk.r.pkg, installsLabel(topAsk.r), publisherOf(topAsk.r.pkg), topAsk.r.scan)}\n`
+        ? // The question is unchanged and still printed: it is the relay when
+          // the answer is yes, and composing it was the step the model
+          // skipped on the first real v2 lookup. Above it now sits the one
+          // check the score cannot make. A 47-query probe of everyday life
+          // and work phrases put 26 of them in this band, and most of those
+          // top rows are homonyms: "insomnia help" -> insomnia-collection-
+          // generator (a REST client, relevance 1.28), "stress management" ->
+          // stress-test (load testing, 1.20), "time management" ->
+          // itinerary-optimizer, "language learning" -> vision-sft. A rare
+          // query word carries high idf, so the wrong sense of it scores
+          // HIGH — which is exactly where the old rule said "put that
+          // question to the user before anything else", i.e. ask "Install
+          // insomnia-collection-generator?" on a sleep question.
+          //
+          // The check is ONE question with both answers named — does the
+          // printed description fit the task: ask, or say nothing and solve
+          // it — not "decide whether to bother", which is the free judgement
+          // the bands exist to remove and which the first incident answered
+          // "no". It goes on its own line ABOVE the question, because a model
+          // that reads the relayable sentence first has already acted.
+          `Likely fit (relevance ${topAsk.rel.toFixed(2)}) — read the row's description first: if it fits the task, ` +
+          `ask the question below, first, via the tool if you have it; if it is a different thing with the same word, ` +
+          `say nothing and solve the task.\n` +
+          `${questionLine(topAsk.r.pkg, installsLabel(topAsk.r), publisherOf(topAsk.r.pkg), topAsk.r.scan)}\n`
         : topAsk.rel >= RELEVANCE_BANDS.judge
           ? `Borderline match (relevance ${topAsk.rel.toFixed(2)}) — judge whether ${topAsk.r.pkg} fits. ` +
-            `If it does, ask exactly this, first, and nothing else: ` +
+            `If it does, ask exactly this, first — via the tool if you have it, else as one line and nothing else: ` +
             `${questionSentence(topAsk.r.pkg, installsLabel(topAsk.r), publisherOf(topAsk.r.pkg), topAsk.r.scan)}\n`
           : `Weak matches only (top relevance ${topAsk.rel.toFixed(2)}) — solve the task yourself.\n`;
     // Below the judge band there is nothing to install, so no install command
@@ -326,9 +349,15 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     // template is all there is to print.
     //
     // The borderline cue says WHEN as well as whether: "judge whether X
-    // fits. If it does, ask exactly this, first, and nothing else: …". It
-    // used to read "judge whether X fits before asking", an ordering a model
-    // satisfies by asking at the end of an answer it has already given —
+    // fits. If it does, ask exactly this, first — via the tool if you have
+    // it, else as one line and nothing else: …". It ended "and nothing else"
+    // full stop, which is true of the text fallback and false of the
+    // AskUserQuestion path the protocol tells the model to prefer: that tool
+    // necessarily splits the sentence into an option label and a description,
+    // so the cue forbade the better way of asking. It now names both, in the
+    // protocol's own order. It used to read "judge whether X fits before
+    // asking", an ordering a model satisfies by asking at the end of an
+    // answer it has already given —
     // which is what happened at 0.85 on the second real v2 use. Judgement
     // stays in front of the sentence, so the band still costs a decision;
     // what it no longer costs is composing the question after making it.
@@ -354,9 +383,19 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       // states the rule and points at the line that has already applied it,
       // so there is nothing here to adjudicate. test/protocol.test.ts fails
       // if either wording comes back, in code or in a comment.
+      //
+      // The description check the >= 1.0 band now carries is not that
+      // judgement returning. "Judge which row, if any, fits" asks the model
+      // whether to engage at all, and its prior answers "no"; "does this
+      // description describe your task" is a single yes/no about text
+      // printed on the row itself, with both answers spelled out — ask, or say
+      // nothing and solve the task. It is also the only check that can catch
+      // the failure BM25 guarantees: a homonym whose shared word is rare
+      // scores higher than the real match, not lower (see the verdict line).
       `[metaskill] Top matches for "${q}" — find does not install. The line under the rows has applied the relevance ` +
-        `rule to the top row you could install: \`Ask the user:\` (relevance >= ${RELEVANCE_BANDS.ask.toFixed(1)}) — put that ` +
-        `question to the user before anything else; \`Borderline match\` — judge whether it fits, then ask first; ` +
+        `rule to the top row you could install: \`Ask the user:\` (relevance >= ${RELEVANCE_BANDS.ask.toFixed(1)}) — likely ` +
+        `fit: read the row's description; if it fits the task, ask that question first; if it is a different thing with ` +
+        `the same word, say nothing and solve the task; \`Borderline match\` — judge whether it fits, then ask first; ` +
         `\`Weak matches only\` (under ${RELEVANCE_BANDS.judge.toFixed(1)}) — solve the task yourself.\n` +
         askable.map((x) => line(x.r, x.rel, x.v.decision, x.v.reason)).join("\n") +
         // The question first, then the command that is only valid once it has

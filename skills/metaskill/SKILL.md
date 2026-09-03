@@ -8,25 +8,22 @@ description: Protocol for handling the [metaskill] block in context. Use in ever
 metaskill injects one `[metaskill]` block into your context, from a
 SessionStart hook: a standing protocol naming a `find` command. That block is
 self-contained — this skill is the longer reference for the same rules, not
-the only place they live. Running `find` prints its own `[metaskill]` line
-naming what it found and what policy thinks of each candidate (see "On `find`"
-below).
+the only place they live.
 
 ## On "Needs confirmation"
 
 `install` prints this when policy says `ask` and no `--force` was given. Put
 exactly ONE short question to the user — what the skill is, who publishes it,
 how many installs, why the task needs it — and on an explicit yes re-run the
-`install <pkg> --force` command exactly as it was printed (see Rules). No
-clear yes means solve the task without it; never install on an assumed or
-implied approval.
+`install <pkg> --force` command exactly as it was printed. No clear yes means
+solve the task without it; never install on an assumed or implied approval.
 
 ## On `find`
 
 Every session opens with a `[metaskill] Standing protocol` block naming a
 `find` command. It stands with or without this skill: at the start of every
 task, before you begin work, derive a 2-4 word English capability phrase
-from the task ("reddit automation", "invoice ocr") and run that command via
+from the task ("reddit automation", "meal planning") and run that command via
 Bash. Run it even when you are sure no skill is needed — checking that is its
 job. Once per task, not once per session; only pure conversation is exempt.
 The prompt may be in any language; the query is always English: derive it
@@ -35,26 +32,30 @@ from the task, never translate the prompt.
 `find` ranks and vets; it **never installs**. It prints the top candidates
 with their install count, scan verdict, relevance and policy decision, and
 stops there — code ranks and applies the rule below, you relay the line it
-prints, and `install` enforces policy on the package it names. Nothing reaches
-disk without the user's explicit yes, unless they set `trust.auto_install:
-true` in `~/.metaskill/metaskill.yaml` (off by default).
+prints, and `install` enforces policy. Nothing reaches disk without the
+user's explicit yes, unless they set `trust.auto_install: true` in
+`~/.metaskill/metaskill.yaml` (off by default).
 
 `relevance` is BM25's report of how much of your query a row matched. A full
 match sits around 1.0 or above; a low `relevance` means the row barely matched
 the words — decline it.
 
 The number on the row `find` singles out decides what happens next; it is a
-rule, not a call you make. `find` applies it: under the rows it prints exactly
-one line, about the top row you could still install.
+rule, not a call you make. `find` applies it: under the rows it prints the
+line that decides, about the top row you could still install.
 
-- **`Ask the user: Install ... ? yes/no`** (`relevance` >= 1.0) — put that
-  question to the user, before anything else. Not left unasked because you
+- **`Ask the user: Install ... ? yes/no`** (`relevance` >= 1.0) — a likely
+  fit: read the row's description. If it fits the task, ask that question
+  first, relayed as printed — it already names the package, its install
+  count, its publisher and its scan verdict. Not left unasked because you
   could do the task yourself: you almost always could; that is not what the
-  question is for. The line already names the package, its install count, its
-  publisher and its scan verdict, so relay it as printed.
+  question is for. But a rare word scores high in the wrong sense too, so if
+  it is a different thing with the same word — an `insomnia` REST client for
+  a sleep question — say nothing and solve the task.
 - **`Borderline match`** (`relevance` >= 0.5) — judge whether that row really
   fits the task. The cue prints the question for you — "ask exactly this,
-  first, and nothing else: ..." — so if it fits, ask that, first.
+  first — via the tool if you have it, else as one line and nothing else:
+  ..." — so if it fits, ask that, first.
 - **`Weak matches only`** (under 0.5) — decline and say nothing. The row
   shares a word with your query and little else.
 
@@ -63,17 +64,15 @@ already begun: use the `AskUserQuestion` tool if you have it — option label
 `Install <skill name>`, the full package in its description, `No` as the
 other option — else send one line of text and nothing else.
 
-A **`live search found`** hit is different: the registry returns no relevance,
-so there is no band to apply, and with no scan verdict it is always `ask`. It
-always prints its question — ask that one the same way.
+A **`live search found`** hit has no relevance to band and no scan verdict,
+so it is always `ask`. It prints its question — ask it the same way.
 
 Act on what it prints:
 
 - **`Already present:`** — read that SKILL.md and follow it.
 - **`Top matches for ...`** / **`live search found ...`** — the line under
-  the rows is the instruction; `find` has already applied the rule above to
-  the row it names. Install only on an explicit yes, using the command that
-  line prints.
+  the rows is the instruction; `find` has already applied the rule above.
+  Install only on an explicit yes, with the command that line prints.
 - **`Refused by policy`** — those packages are not installable by any flag.
   Never offer them; do not ask about them.
 - **`Registry did not answer`** — a lookup that never completed, not evidence

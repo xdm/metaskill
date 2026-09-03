@@ -1,0 +1,240 @@
+{
+  "note": "Everyday life/work queries, each with the top pkg search() returns against the PACKAGED SNAPSHOT (index-snapshot.json). Regenerate after a snapshot refresh; `homonym` is hand-set — true means the top row is plainly a different thing that happens to share a word with the query.",
+  "queries": [
+    {
+      "query": "nutrition meal planning",
+      "pkg": "ailabs-393/ai-labs-claude-skills@nutritional-specialist",
+      "homonym": false
+    },
+    {
+      "query": "weight loss diet",
+      "pkg": "gmgnai/gmgn-skills@gmgn-swap",
+      "homonym": true
+    },
+    {
+      "query": "calorie counting",
+      "pkg": null,
+      "homonym": false
+    },
+    {
+      "query": "hydration tracking",
+      "pkg": "kostja94/marketing-skills@analytics-tracking",
+      "homonym": true
+    },
+    {
+      "query": "sleep improvement",
+      "pkg": "github/awesome-copilot@ai-prompt-engineering-safety-review",
+      "homonym": true
+    },
+    {
+      "query": "insomnia help",
+      "pkg": "dietrichgebert/ponytail@ponytail-help",
+      "homonym": true
+    },
+    {
+      "query": "meditation mindfulness",
+      "pkg": null,
+      "homonym": false
+    },
+    {
+      "query": "stress management",
+      "pkg": "mattpocock/skills@grilling",
+      "homonym": true
+    },
+    {
+      "query": "mental health journaling",
+      "pkg": "coreyhaines31/marketingskills@marketing-psychology",
+      "homonym": true
+    },
+    {
+      "query": "running training plan",
+      "pkg": "huggingface/skills@huggingface-trackio",
+      "homonym": true
+    },
+    {
+      "query": "marathon training",
+      "pkg": "nomadamas/k-skill@korean-marathon-schedule",
+      "homonym": true
+    },
+    {
+      "query": "gym workout program",
+      "pkg": "solana-foundation/solana-dev-skill@solana-dev",
+      "homonym": true
+    },
+    {
+      "query": "strength training",
+      "pkg": "huggingface/skills@huggingface-trackio",
+      "homonym": true
+    },
+    {
+      "query": "home workout",
+      "pkg": "homeassistant-ai/skills@home-assistant-best-practices",
+      "homonym": true
+    },
+    {
+      "query": "yoga routine",
+      "pkg": null,
+      "homonym": false
+    },
+    {
+      "query": "stretching mobility",
+      "pkg": "nomadamas/k-skill@kakao-map",
+      "homonym": true
+    },
+    {
+      "query": "time management",
+      "pkg": "syncfusion/react-ui-components-skills@syncfusion-react-scheduler",
+      "homonym": true
+    },
+    {
+      "query": "productivity planning",
+      "pkg": "googleworkspace/cli@gws-workflow",
+      "homonym": true
+    },
+    {
+      "query": "habit tracking",
+      "pkg": "kostja94/marketing-skills@analytics-tracking",
+      "homonym": true
+    },
+    {
+      "query": "goal setting",
+      "pkg": "joeseesun/qiaomu-goal-meta-skill@qiaomu-goal-meta-skill",
+      "homonym": false
+    },
+    {
+      "query": "meeting notes summary",
+      "pkg": "larksuite/cli@lark-workflow-meeting-summary",
+      "homonym": false
+    },
+    {
+      "query": "email writing",
+      "pkg": "cloudflare/skills@cloudflare-email-service",
+      "homonym": true
+    },
+    {
+      "query": "presentation slides",
+      "pkg": "googleworkspace/cli@recipe-create-presentation",
+      "homonym": false
+    },
+    {
+      "query": "public speaking",
+      "pkg": "code.deepline.com@public-social-research",
+      "homonym": true
+    },
+    {
+      "query": "project planning personal",
+      "pkg": "othmanadi/planning-with-files@planning-with-files",
+      "homonym": true
+    },
+    {
+      "query": "resume writing",
+      "pkg": "paramchoudhary/resumeskills@resume-version-manager",
+      "homonym": false
+    },
+    {
+      "query": "job interview prep",
+      "pkg": "onewave-ai/claude-skills@job-application-optimizer",
+      "homonym": false
+    },
+    {
+      "query": "career change",
+      "pkg": "paramchoudhary/resumeskills@career-changer-translator",
+      "homonym": false
+    },
+    {
+      "query": "salary negotiation",
+      "pkg": "anthropics/knowledge-work-plugins@call-summary",
+      "homonym": true
+    },
+    {
+      "query": "linkedin profile",
+      "pkg": "kostja94/marketing-skills@linkedin-posts",
+      "homonym": false
+    },
+    {
+      "query": "personal finance budgeting",
+      "pkg": "gracefullight/stock-checker@yahoo-finance",
+      "homonym": true
+    },
+    {
+      "query": "investing basics",
+      "pkg": "firebase/agent-skills@firebase-basics",
+      "homonym": true
+    },
+    {
+      "query": "saving money",
+      "pkg": "launchdarkly/ai-tooling@create-graph",
+      "homonym": true
+    },
+    {
+      "query": "tax filing personal",
+      "pkg": "anthropics/knowledge-work-plugins@tax-season-organizer",
+      "homonym": false
+    },
+    {
+      "query": "cooking recipes",
+      "pkg": "nvidia/skills@nemotron-retrieval-recipes",
+      "homonym": true
+    },
+    {
+      "query": "meal prep",
+      "pkg": "anthropics/knowledge-work-plugins@weekly-prep-brief",
+      "homonym": true
+    },
+    {
+      "query": "grocery list",
+      "pkg": "ziniao-open/skills@ziniao-workflow-batch-account",
+      "homonym": true
+    },
+    {
+      "query": "travel planning",
+      "pkg": "langchain-ai/langchain-skills@langgraph-persistence",
+      "homonym": true
+    },
+    {
+      "query": "trip itinerary",
+      "pkg": "price-win/pricewin-skills-hub@pricewin-flight-search",
+      "homonym": false
+    },
+    {
+      "query": "parenting advice",
+      "pkg": "ailabs-393/ai-labs-claude-skills@nutritional-specialist",
+      "homonym": true
+    },
+    {
+      "query": "home organization",
+      "pkg": "homeassistant-ai/skills@home-assistant-best-practices",
+      "homonym": true
+    },
+    {
+      "query": "gift ideas",
+      "pkg": "coreyhaines31/marketingskills@marketing-ideas",
+      "homonym": true
+    },
+    {
+      "query": "language learning",
+      "pkg": "affaan-m/ecc@continuous-learning",
+      "homonym": true
+    },
+    {
+      "query": "study techniques",
+      "pkg": "paramchoudhary/resumeskills@portfolio-case-study-writer",
+      "homonym": true
+    },
+    {
+      "query": "exam preparation",
+      "pkg": "composiohq/awesome-claude-skills@invoice-organizer",
+      "homonym": true
+    },
+    {
+      "query": "book summaries",
+      "pkg": "deusyu/translate-book@translate-book",
+      "homonym": true
+    },
+    {
+      "query": "reading list",
+      "pkg": "medusajs/medusa-agent-skills@mcloud-variables",
+      "homonym": true
+    }
+  ]
+}

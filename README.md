@@ -63,7 +63,7 @@ Between pressing Enter and Claude's first token:
    each one past the trust policy:
 
 ```
-[metaskill] Top matches for "xlsx export formulas" — find does not install. The line under the rows has applied the relevance rule to the top row you could install: `Ask the user:` (relevance >= 1.0) — put that question to the user before anything else; `Borderline match` — judge whether it fits, then ask first; `Weak matches only` (under 0.5) — solve the task yourself.
+[metaskill] Top matches for "xlsx export formulas" — find does not install. The line under the rows has applied the relevance rule to the top row you could install: `Ask the user:` (relevance >= 1.0) — likely fit: read the row's description; if it fits the task, ask that question first; if it is a different thing with the same word, say nothing and solve the task; `Borderline match` — judge whether it fits, then ask first; `Weak matches only` (under 0.5) — solve the task yourself.
   aiskillstore/marketplace@xlsx (237 installs, scan=unknown, relevance=0.90) [ask: needs your yes — publisher aiskillstore not allowlisted]
     Spreadsheet toolkit (.xlsx/.csv). Create/edit with formulas/formatting, analyze data, visualization, recalculate formulas, for spreadsheet p
   davila7/claude-code-templates@xlsx (949 installs, scan=clean, relevance=0.90) [ask: needs your yes — publisher davila7 not allowlisted]
@@ -74,7 +74,7 @@ Between pressing Enter and Claude's first token:
     Create/edit .xlsx spreadsheets with tables, formulas, charts, validation, and workbook automation. Use when asked to generate Excel reports,
   ailabs-393/ai-labs-claude-skills@xlsx (876 installs, scan=clean, relevance=0.67) [ask: needs your yes — publisher ailabs-393 not allowlisted]
     Comprehensive spreadsheet creation, editing, and analysis with support for formulas, formatting, data analysis, and visualization. When Clau
-Borderline match (relevance 0.90) — judge whether aiskillstore/marketplace@xlsx fits. If it does, ask exactly this, first, and nothing else: Install aiskillstore/marketplace@xlsx (237 installs, publisher aiskillstore, scan unknown) for this task? yes/no
+Borderline match (relevance 0.90) — judge whether aiskillstore/marketplace@xlsx fits. If it does, ask exactly this, first — via the tool if you have it, else as one line and nothing else: Install aiskillstore/marketplace@xlsx (237 installs, publisher aiskillstore, scan unknown) for this task? yes/no
 Install only on the user's explicit yes: "/Users/you/.nvm/versions/node/v24.17.0/bin/node" "/Users/you/.metaskill/bin/dist/cli.js" install aiskillstore/marketplace@xlsx --force --matched "xlsx export formulas"
 ```
 
@@ -85,15 +85,19 @@ Install only on the user's explicit yes: "/Users/you/.nvm/versions/node/v24.17.0
    because none of these publishers is allowlisted; an allowlisted publisher
    with a clean scan reads `auto-install is off` instead — the shipped
    default, where the verdict is computed in full and then held for your yes.
-5. The last line is the one Claude acts on, and it is banded on `relevance`.
-   The top row here is 0.90 — `Borderline match` — so Claude has to judge
-   whether the row really fits, and only then asks, before it starts the
-   task. At 1.0 and above the line is the question itself (`Ask the user:`).
-   Below 0.5 it reads `Weak matches only` and Claude solves the task alone.
-   Either way the question is written out for it — package, publisher,
-   install count, scan verdict — because a question Claude has to compose is
-   a question it talks itself out of asking. Nothing installs without your
-   explicit yes, with the command that line printed.
+5. The lines under the rows are what Claude acts on, and they are banded on
+   `relevance`. The top row here is 0.90 — `Borderline match` — so Claude has
+   to judge whether the row really fits, and only then asks, before it starts
+   the task. At 1.0 and above the question itself prints (`Ask the user:`),
+   under a cue telling Claude to read that row's description first: a rare
+   word ranks its wrong sense just as highly — "insomnia help" finds a REST
+   client called Insomnia — so a top row that is a different thing with the
+   same word is declined in silence. Below 0.5 it reads `Weak matches only`
+   and Claude solves the task alone. In both asking bands the question is
+   written out for it — package, publisher, install count, scan verdict —
+   because a question Claude has to compose is a question it talks itself out
+   of asking. Nothing installs without your explicit yes, with the command
+   that line printed.
 
 A local index hit like this is one fast subprocess call; installing a skill —
 or, on an index miss, the one live registry search, capped at 4 seconds — is
@@ -153,11 +157,12 @@ What backs it up:
 - **`find` never installs.** It ranks the local index, runs each candidate
   past the policy, prints the shortlist with a verdict per row, and stops.
   The division of labour is deliberate: code ranks and applies the relevance
-  rule, Claude relays the line it prints (and judges the borderline band,
-  where only a reader who understands the task can tell), and
-  `metaskill install` enforces the policy on that package. An earlier
-  version let the top-ranked hit install itself, and BM25 duly installed
-  third-party skills for prompts like "say hello".
+  rule, Claude relays the line it prints — after reading that row's own
+  description, because only a reader who understands the task can tell an
+  `insomnia` REST client from a sleep skill — and `metaskill install`
+  enforces the policy on that package. An earlier version let the top-ranked
+  hit install itself, and BM25 duly installed third-party skills for prompts
+  like "say hello".
 - **`deny` cannot be bypassed by any flag — install, update, or the
   unattended sync update alike.** A `dirty` verdict is exactly as final as a
   denied publisher, even for an already-installed, allowlisted skill: as of
