@@ -93,7 +93,12 @@ import { metaskillCmd } from "./paths.js";
 //     craft like SEO", which tells a model this command is for engineering
 //     tasks — and the same probe found the registry answering "meal prep",
 //     "salary negotiation" and "study techniques" too. A query never formed
-//     is the one miss no band can catch.
+//     is the one miss no band can catch. The list is not exhaustive and
+//     cannot be at this length; it is priced per word, so each one earns its
+//     place off the probe. `writing` covers two of the four fixture queries
+//     that reach the ask band against the shipped snapshot (`email writing`,
+//     `resume writing`) and is roughly a quarter of measured everyday AI
+//     use; it is here in place of `travel`, which reaches no asking band.
 //   - It does NOT warn against `npx skills add`. That duplicates SKILL.md
 //     Rule 2 and spends scarce lines naming a bypass to a reader who was not
 //     looking for one. Note what is and is not enforced: metaskill's OWN
@@ -169,7 +174,7 @@ export function protocolText(): string {
     "",
     "The prompt may be in any language; the query is English, from the task,",
     "not translated. Name the artefact or domain, not the action: formats,",
-    "frameworks, health, money, career, cooking, travel, learning.",
+    "frameworks, health, money, career, cooking, writing, learning.",
     "",
     "Ask FIRST: before you start the task, not inside an answer, via",
     "AskUserQuestion if you have it (`Install <skill name>` / `No`, package",

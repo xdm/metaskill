@@ -485,9 +485,51 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     expect(topRelevance(r.stdout, "someorg/repo@snorklex")).toBeGreaterThanOrEqual(1);
     expect(verdictLines(r.stdout)).toEqual([
       "Likely fit (relevance 1.40) — read the row's description first: if it fits the task, ask the question below, " +
-        "first, via the tool if you have it; if it is a different thing with the same word, say nothing and solve the task.",
+        "first, via the tool if you have it; if it is a different thing with the same word, say nothing and solve " +
+        "the task; if the description is blank or a bare mark (`>`, `|`), you cannot confirm the fit — say nothing " +
+        "and solve the task.",
       "Ask the user: Install someorg/repo@snorklex (42 installs, publisher someorg, scan clean) for this task? yes/no",
     ]);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("band >= 1.0 with nothing to read: the cue says an unconfirmable fit is not one", async () => {
+    // 900 of the shipped snapshot's 4,831 records carry a description that is
+    // blank or a bare YAML block mark (`>`, `|`, `>-`) — 18.6% — and 7 of the
+    // 44 answerable fixture queries hit one as their TOP row (`insomnia
+    // help`, `home workout`, `goal setting`, `public speaking`, `investing
+    // basics`, `tax filing personal`, `home organization`). They rank on the
+    // skill NAME alone, which is exactly how a name-shaped match reaches a
+    // high relevance with no evidence behind it.
+    //
+    // The index is synthetic because the combination cannot be staged from
+    // the snapshot: those seven queries all land in the borderline band
+    // there, and it is the larger live index that pushes them up. The
+    // mechanism is the same either way — a description of `>` and a `Likely
+    // fit` cue above a ready-made question.
+    const home = freshHome("find-band-ask-blank");
+    const idx = writeIndex(home, [
+      rec({ name: "snorklex", source: "someorg/repo", pkg: "someorg/repo@snorklex", description: ">", installs: 42 }),
+      rec({ name: "widget-press", source: "acme/tools", pkg: "acme/tools@widget-press",
+            description: "Press widgets into shape.", installs: 20 }),
+    ]);
+    const r = await runCli(["find", "snorklex", "--index", idx], { home });
+    expect(topRelevance(r.stdout, "someorg/repo@snorklex")).toBeGreaterThanOrEqual(1);
+    // The row prints the mark it has, so the model can see there is nothing
+    // to read...
+    expect(r.stdout).toContain("someorg/repo@snorklex (42 installs, scan=clean, relevance=");
+    // ...and the cue tells it what that means. Without this clause the two
+    // branches on screen ("fits the task" / "a different thing with the same
+    // word") both assume text, and a blank description is neither.
+    expect(verdictLines(r.stdout)[0]).toContain(
+      "if the description is blank or a bare mark (`>`, `|`), you cannot confirm the fit — " +
+        "say nothing and solve the task.",
+    );
+    // The question is still there: the user may still say yes, and the model
+    // must not have to compose the sentence if they do.
+    expect(verdictLines(r.stdout)[1]).toBe(
+      "Ask the user: Install someorg/repo@snorklex (42 installs, publisher someorg, scan clean) for this task? yes/no",
+    );
     fs.rmSync(home, { recursive: true, force: true });
   });
 
@@ -682,14 +724,17 @@ describe("find: everyday queries against the shipped snapshot (golden fixture)",
     fs.readFileSync(path.join(ROOT, "test", "fixtures", "everyday-queries.json"), "utf8"),
   ) as { note: string; queries: { query: string; pkg: string | null; homonym: boolean }[] };
 
-  it("keeps the 47-query probe intact, with its hand-set homonym flags", () => {
+  // This one guards the fixture's integrity and RECORDS a measurement; it is
+  // not a behaviour of `src/`. No change to the ranking code can break the
+  // homonym count — the flags are hand-set and travel with the file — so read
+  // a failure here as "the fixture was edited", never as "the product
+  // regressed". It is worth asserting anyway: the majority is the finding the
+  // description check is priced against, and someone editing these flags down
+  // to a handful should have to mean it.
+  it("documents the measured probe: 47 unique queries, well-formed flags, homonyms in the majority", () => {
     expect(fixture.queries).toHaveLength(47);
     expect(new Set(fixture.queries.map((q) => q.query)).size).toBe(47);
     for (const q of fixture.queries) expect(typeof q.homonym, q.query).toBe("boolean");
-    // The finding this fixture exists to record: most everyday queries land on
-    // a package that is a different thing wearing the same word. If a future
-    // index makes that mostly false, the protocol's description check has
-    // stopped earning its budget and someone should say so deliberately.
     expect(fixture.queries.filter((q) => q.homonym).length).toBeGreaterThan(
       fixture.queries.length / 2,
     );

@@ -330,9 +330,25 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
           // the bands exist to remove and which the first incident answered
           // "no". It goes on its own line ABOVE the question, because a model
           // that reads the relayable sentence first has already acted.
+          //
+          // The third clause is for the rows that have nothing to read: 900
+          // of the shipped snapshot's 4,831 records carry a description that
+          // is blank or a bare YAML block mark (`>`, `|`, `>-`) — 18.6%, and
+          // 7 of the 44 answerable fixture queries hit one as their TOP row
+          // (`insomnia help`, `home workout`, `goal setting`, `public
+          // speaking`, `investing basics`, `tax filing personal`, `home
+          // organization`). "Fits the task" and "a different thing with the
+          // same word" both assume text; a blank one is neither, so without
+          // this clause the cue on screen gives no instruction at all in a
+          // case it reaches nearly a fifth of the time. It resolves the same
+          // way silence always does here: an unconfirmable fit is not a fit.
+          // (The indexer-side defect — descriptions lost to YAML block
+          // scalars — is deferred separately; this is the runtime's answer
+          // to data it cannot trust.)
           `Likely fit (relevance ${topAsk.rel.toFixed(2)}) — read the row's description first: if it fits the task, ` +
           `ask the question below, first, via the tool if you have it; if it is a different thing with the same word, ` +
-          `say nothing and solve the task.\n` +
+          `say nothing and solve the task; if the description is blank or a bare mark (\`>\`, \`|\`), you cannot ` +
+          `confirm the fit — say nothing and solve the task.\n` +
           `${questionLine(topAsk.r.pkg, installsLabel(topAsk.r), publisherOf(topAsk.r.pkg), topAsk.r.scan)}\n`
         : topAsk.rel >= RELEVANCE_BANDS.judge
           ? `Borderline match (relevance ${topAsk.rel.toFixed(2)}) — judge whether ${topAsk.r.pkg} fits. ` +

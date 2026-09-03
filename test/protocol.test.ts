@@ -52,8 +52,19 @@ describe("protocolText", () => {
     expect(protocolText().split("\n")).toContain("Run it before answering, not after.");
   });
 
-  it("tells the model the user's language does not matter", () => {
-    expect(protocolText()).toMatch(/any language/i);
+  it("tells the model the user's language does not matter, and to name the artefact anyway", () => {
+    // Both live incidents arrived as Russian prompts, and a model that
+    // translates the prompt instead of naming the capability searches for the
+    // user's phrasing rather than the artefact. Only /any language/ was
+    // pinned, so the half that says what to do with it — derive the query
+    // FROM THE TASK, do not translate — could be trimmed for budget without
+    // a single test noticing. It nearly was.
+    const t = flat();
+    expect(t).toMatch(/any language/i);
+    expect(t).toMatch(/from the task/i);
+    expect(t).toMatch(/not translated/i);
+    // ...and SKILL.md says the same thing in its own words.
+    expect(SKILL_MD.replace(/\s+/g, " ")).toMatch(/never translate the prompt/i);
   });
 
   it("quotes only labels that find.ts actually prints", () => {
@@ -176,8 +187,25 @@ describe("protocolText", () => {
     // ...and the band still ends in an ask, not in a free choice.
     expect(t).toMatch(/ask it first/i);
     // The same check, in the two documents the model reads in the decision
-    // turn and afterwards. find.ts's copy is the one on screen when it acts.
+    // turn and afterwards. find.ts's copy is the one on screen when it acts —
+    // and it says this TWICE, in the header and in the verdict line, so a
+    // bare `toContain("read the row's description")` passes with the verdict
+    // line mutated to anything at all. The cue's own fuller phrase is what
+    // pins the site the model reads under the rows.
     expect(FIND_SRC, "find.ts states the description check").toContain("read the row's description");
+    expect(FIND_SRC, "the >= 1.0 CUE states it, not only the header").toContain(
+      "— read the row's description first:",
+    );
+    // The rows this lands on are not always readable: 900 of the shipped
+    // snapshot's 4,831 records have a description that is blank or a bare
+    // YAML block mark, and 7 of the 44 answerable fixture queries hit one as
+    // their top row. "Fits" and "a different thing with the same word" both
+    // assume text, so the cue names the third case and resolves it the way
+    // silence always resolves here.
+    expect(FIND_SRC, "the cue covers a description it cannot read").toContain(
+      "if the description is blank or a bare mark",
+    );
+    expect(SKILL_MD.replace(/\s+/g, " "), "SKILL.md covers it too").toContain("A blank description");
     expect(SKILL_MD.replace(/\s+/g, " "), "SKILL.md states the description check").toContain(
       "read the row's description",
     );
@@ -197,7 +225,7 @@ describe("protocolText", () => {
     // which is how "meal prep" or "salary negotiation" never gets a query at
     // all. The registry carries skills for both.
     const t = flat();
-    for (const kind of ["health", "money", "career", "cooking", "travel", "learning"]) {
+    for (const kind of ["health", "money", "career", "cooking", "writing", "learning"]) {
       expect(t, `protocol names "${kind}"`).toContain(kind);
     }
   });
@@ -260,6 +288,12 @@ describe("protocolText", () => {
     expect(FIND_SRC, `find.ts prints "${phrase}"`).toContain(phrase);
     expect(SKILL_MD.replace(/\s+/g, " "), `SKILL.md quotes "${phrase}"`).toContain(phrase);
     expect(FIND_SRC, "the old absolute wording is gone").not.toContain("ask exactly this, first, and nothing else");
+    // `Borderline match` appears in the header too, so pin the verdict line
+    // itself — the interpolated package is what makes this string unique to
+    // the cue printed under the rows.
+    expect(FIND_SRC, "the borderline CUE still judges before it asks").toContain(
+      "judge whether ${topAsk.r.pkg} fits.",
+    );
   });
 
   it("quotes the same two numbers find.ts bands on", () => {

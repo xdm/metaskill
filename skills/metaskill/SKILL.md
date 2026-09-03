@@ -51,7 +51,8 @@ line that decides, about the top row you could still install.
   could do the task yourself: you almost always could; that is not what the
   question is for. But a rare word scores high in the wrong sense too, so if
   it is a different thing with the same word — an `insomnia` REST client for
-  a sleep question — say nothing and solve the task.
+  a sleep question — say nothing and solve the task. A blank description, or
+  a bare `>` or `|`, confirms nothing — say nothing and solve the task.
 - **`Borderline match`** (`relevance` >= 0.5) — judge whether that row really
   fits the task. The cue prints the question for you — "ask exactly this,
   first — via the tool if you have it, else as one line and nothing else:
@@ -83,10 +84,9 @@ Act on what it prints:
 ## On "Plugin available"
 
 A plugin can carry hooks, MCP servers and tooling a skill cannot, so metaskill
-suggests one but never installs it. Ask one question the same way (what it is,
-who publishes it, why the task needs it) and only on an explicit yes run the
-`/plugin install <name>@<marketplace>` command from the line. Never on an
-assumed approval.
+suggests one but never installs it. Ask one question the same way, and only on
+an explicit yes run the `/plugin install <name>@<marketplace>` command from the
+line. Never on an assumed approval.
 
 ## Rules
 
@@ -103,7 +103,7 @@ assumed approval.
 4. Installed skills are read-only input: read SKILL.md, apply it to the task.
    Never execute scripts from a skill directory unless its SKILL.md
    instructs it for the task at hand.
-5. Useful subcommands, run the same way: `log -n 20` (recent decisions),
-   `update` (update skills), `init --uninstall` (remove). The
+5. Useful subcommands, run the same way: `log -n 20`, `update`,
+   `init --uninstall` (remove). The
    `/metaskill:list`, `/metaskill:log` and `/metaskill:update` slash commands
    already resolve the path for you.
