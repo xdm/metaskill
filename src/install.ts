@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { parseFrontmatter } from "./frontmatter.js";
+import { parseFrontmatter, singleLine } from "./frontmatter.js";
 import { addLockEntry } from "./lock.js";
 import { agentsSkillsDir, claudeUserSkillsDir, skillsCmd } from "./paths.js";
 import type { InstallResult } from "./types.js";
@@ -66,7 +66,11 @@ export async function installSkill(
   let version: string | undefined;
   if (skillMdPath) {
     try {
-      version = parseFrontmatter(fs.readFileSync(skillMdPath, "utf8")).version;
+      // Single-line at the boundary: this value is written to the lock and
+      // printed in `Installed X (vY)`, and a block scalar can now hold a
+      // newline. The parser keeps the file's own shape; the consumer states
+      // what it can display.
+      version = singleLine(parseFrontmatter(fs.readFileSync(skillMdPath, "utf8")).version);
     } catch {
       /* fine — version stays unknown */
     }

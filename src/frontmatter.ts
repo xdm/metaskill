@@ -46,6 +46,19 @@ export function parseFrontmatter(md: string): Record<string, string> {
   return out;
 }
 
+// A parsed value is now faithfully multi-line whenever the file said so, and
+// fidelity is this module's job. Single-line-ness is the *caller's*
+// requirement: a `version` copied into skills-lock.json is printed in a
+// fixed-width table (`metaskill list`) and inside one-line confirmations, and
+// a `name` is printed in one-line notices — so it is collapsed where it is
+// consumed, not where it is read. Empty collapses to undefined, which routes
+// through the caller's existing missing-value path.
+export function singleLine(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const one = value.replace(/\s+/g, " ").trim();
+  return one === "" ? undefined : one;
+}
+
 // YAML 1.2 §8.1.1: `|` keeps the line breaks, `>` folds each one into a space
 // and each blank line into one break; the chomping indicator `-` strips the
 // trailing break, `+` keeps every one, and the default clips to exactly one.

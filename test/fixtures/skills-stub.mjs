@@ -39,9 +39,15 @@ modelscope.cn@reddit-helper 146.1K installs
 function writeSkill(skill, version) {
   const agentsDir = path.join(home, ".agents", "skills", skill);
   fs.mkdirSync(agentsDir, { recursive: true });
+  // STUB_VERSION_BLOCK writes the version as a YAML literal block over two
+  // lines — a real registry shape, and one the frontmatter parser now folds
+  // faithfully, so the value reaching the lock carries a newline unless a
+  // consumer collapses it.
+  const versionField =
+    process.env.STUB_VERSION_BLOCK === "1" ? `version: |\n  ${version}\n  (build 456)` : `version: ${version}`;
   fs.writeFileSync(
     path.join(agentsDir, "SKILL.md"),
-    `---\nname: ${skill}\ndescription: stub skill for ${skill}\nversion: ${version}\n---\n\n# ${skill}\n`,
+    `---\nname: ${skill}\ndescription: stub skill for ${skill}\n${versionField}\n---\n\n# ${skill}\n`,
   );
   const claudeDir = path.join(home, ".claude", "skills");
   fs.mkdirSync(claudeDir, { recursive: true });

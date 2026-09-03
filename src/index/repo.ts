@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { parseFrontmatter } from "../frontmatter.js";
+import { parseFrontmatter, singleLine } from "../frontmatter.js";
 import { walkDir } from "../scan.js";
 import type { RepoMeta } from "./types.js";
 
@@ -95,7 +95,10 @@ export function findSkillDirs(root: string): RepoSkill[] {
     } catch {
       continue; // unreadable file, not a skill we can describe
     }
-    const name = fm.name;
+    // Collapsed here for the same reason install.ts collapses `version`: this
+    // name becomes the record's `pkg` (`source@name`), which the runtime prints
+    // one row per line and writes into the lock.
+    const name = singleLine(fm.name);
     if (!name) continue; // the registry indexes by frontmatter name; no name, no record
     const dir = path.dirname(e.abs);
     out.push({
@@ -174,10 +177,11 @@ export async function fetchSkillsViaTree(
       const res = await fetchImpl(`https://raw.githubusercontent.com/${source}/HEAD/${p}`);
       if (!res.ok) continue;
       const fm = parseFrontmatter(await res.text());
-      if (!fm.name) continue;
+      const name = singleLine(fm.name); // one line, as in findSkillDirs above
+      if (!name) continue;
       out.push({
         rel: p.slice(0, -"/SKILL.md".length),
-        name: fm.name,
+        name,
         description: fm.description ?? "",
         license: fm.license,
         version: fm.version,

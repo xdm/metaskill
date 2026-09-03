@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseFrontmatter } from "../src/frontmatter.js";
+import { parseFrontmatter, singleLine } from "../src/frontmatter.js";
 
 // Frontmatter fixtures are written line by line so that blank lines — which
 // carry meaning inside a block scalar — are visible in the test itself.
@@ -103,5 +103,28 @@ describe("parseFrontmatter: block scalars", () => {
     const last = parseFrontmatter(md("name: demo", "description: |", "  Body."));
     expect(last.description).toBe("Body.\n");
     expect(last.name).toBe("demo");
+  });
+});
+
+// The parser is faithful, so a block scalar can now hand a caller a value with
+// a newline in it — impossible before. Callers that print into one line or a
+// fixed-width table collapse it here, at the boundary, never in the parser.
+describe("singleLine", () => {
+  it("collapses every whitespace run to one space and trims", () => {
+    expect(singleLine("1.2.3\n(build 456)\n")).toBe("1.2.3 (build 456)");
+    expect(singleLine("  a \t\n  b  ")).toBe("a b");
+    expect(singleLine("already-one-line")).toBe("already-one-line");
+  });
+
+  it("returns undefined for nothing at all, so the caller's missing-value path runs", () => {
+    expect(singleLine(undefined)).toBeUndefined();
+    expect(singleLine("")).toBeUndefined();
+    expect(singleLine("  \n\t ")).toBeUndefined();
+  });
+
+  it("is what a multi-line frontmatter version becomes on its way to the lock", () => {
+    const fm = parseFrontmatter(md("name: demo", "version: |", "  1.2.3", "  (build 456)"));
+    expect(fm.version).toBe("1.2.3\n(build 456)\n"); // the file's own shape, kept
+    expect(singleLine(fm.version)).toBe("1.2.3 (build 456)"); // what a lock entry may hold
   });
 });

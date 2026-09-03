@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { publisherOf } from "../discover.js";
-import { parseFrontmatter } from "../frontmatter.js";
+import { parseFrontmatter, singleLine } from "../frontmatter.js";
 import { findByPkg, loadIndex } from "../index/read.js";
 import type { IndexFile } from "../index/types.js";
 import { readLock, writeLock } from "../lock.js";
@@ -25,7 +25,8 @@ function run(cmd: string[], timeoutMs: number): Promise<void> {
 function installedVersion(skill: string): string | undefined {
   for (const dir of [claudeUserSkillsDir(), agentsSkillsDir()]) {
     try {
-      return parseFrontmatter(fs.readFileSync(path.join(dir, skill, "SKILL.md"), "utf8")).version;
+      // written to the lock and printed by `list` — see install.ts
+      return singleLine(parseFrontmatter(fs.readFileSync(path.join(dir, skill, "SKILL.md"), "utf8")).version);
     } catch {
       /* try next dir */
     }

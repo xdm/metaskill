@@ -1913,3 +1913,84 @@ describe("packaged assets", () => {
     expect(md).toContain("one");
   });
 });
+
+// A frontmatter `version` written as a YAML block scalar is folded faithfully
+// by the parser, so it can now arrive with a newline in it — a shape that was
+// structurally impossible before block scalars were read. Everything that
+// stores or prints one collapses it at its own boundary; these tests drive the
+// three lock writers (install, update, sync) and both display sites through a
+// stub whose SKILL.md carries `version: |` over two lines.
+describe("a multi-line frontmatter version never reaches the lock or the table", () => {
+  const BLOCK = { STUB_VERSION_BLOCK: "1" };
+
+  function seedIndex(home: string, over: Record<string, unknown>): void {
+    fs.mkdirSync(path.join(home, ".metaskill"), { recursive: true });
+    fs.writeFileSync(path.join(home, ".metaskill", "index.json"), JSON.stringify(indexFile([rec(over)])));
+  }
+
+  function seedLocked(home: string, skill: string): void {
+    seedIndex(home, {
+      name: skill, source: "anthropics/skills", pkg: `anthropics/skills@${skill}`,
+      description: "A skill.", installs: 999999,
+    });
+    fs.writeFileSync(
+      path.join(home, ".metaskill", "skills-lock.json"),
+      JSON.stringify({
+        [`anthropics/skills@${skill}`]: {
+          pkg: `anthropics/skills@${skill}`, skill, installedAt: "2026-08-01T00:00:00Z", version: "1.2.3",
+        },
+      }),
+    );
+    const dir = path.join(home, ".agents", "skills", skill);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "SKILL.md"), `---\nname: ${skill}\nversion: 1.2.3\n---\n`);
+  }
+
+  it("install stores it on one line and says so on one line", async () => {
+    const home = freshHome("version-block-install");
+    seedIndex(home, {
+      name: "gizmo", source: "anthropics/skills", pkg: "anthropics/skills@gizmo",
+      description: "Gizmo automation toolkit.", installs: 999999,
+    });
+
+    const r = await runCli(["install", "anthropics/skills@gizmo", "--force"], { home, env: BLOCK });
+    expect(r.code).toBe(0);
+    expect(readLockFile(home)["anthropics/skills@gizmo"]).toMatchObject({
+      skill: "gizmo",
+      version: "1.2.3 (build 456)",
+    });
+
+    const confirmations = r.stdout.split("\n").filter((l) => l.startsWith("Installed "));
+    expect(confirmations).toHaveLength(1);
+    expect(confirmations[0]).toContain("Installed anthropics/skills@gizmo (v1.2.3 (build 456))");
+
+    // ...and the fixed-width table stays one row per skill.
+    const list = await runCli(["list"], { home });
+    expect(list.code).toBe(0);
+    const rows = list.stdout.trim().split("\n");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatch(/^SKILL +PACKAGE +VERSION +MATCHED +INSTALLED +STATUS$/);
+    expect(rows[1]).toMatch(
+      /^gizmo +anthropics\/skills@gizmo +v1\.2\.3 \(build 456\) +- +\d{4}-\d{2}-\d{2} +ok$/,
+    );
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("update refreshes the lock with one line", async () => {
+    const home = freshHome("version-block-update");
+    seedLocked(home, "xlsx");
+    const r = await runCli(["update"], { home, env: { ...BLOCK, STUB_UPDATE_VERSION: "9.9.9" } });
+    expect(r.code).toBe(0);
+    expect(readLockFile(home)["anthropics/skills@xlsx"]!.version).toBe("9.9.9 (build 456)");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("sync's unattended refresh does the same", async () => {
+    const home = freshHome("version-block-sync");
+    seedLocked(home, "xlsx");
+    const r = await runCli(["sync"], { home, env: { ...BLOCK, STUB_UPDATE_VERSION: "9.9.9" } });
+    expect(r.code).toBe(0);
+    expect(readLockFile(home)["anthropics/skills@xlsx"]!.version).toBe("9.9.9 (build 456)");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+});

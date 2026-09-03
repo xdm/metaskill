@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { parseFrontmatter } from "./frontmatter.js";
+import { parseFrontmatter, singleLine } from "./frontmatter.js";
 import { agentsSkillsDir, claudeUserSkillsDir, projectSkillsDir } from "./paths.js";
 import type { InstalledSkill } from "./types.js";
 
@@ -20,7 +20,9 @@ function scanDir(dir: string, scope: "global" | "project"): InstalledSkill[] {
     try {
       if (!fs.existsSync(md)) continue;
       const fm = parseFrontmatter(fs.readFileSync(md, "utf8"));
-      out.push({ name: fm.name ?? e.name, dir: skillDir, description: fm.description, scope });
+      // find.ts prints this name in a one-line notice, so it is collapsed
+      // here; an empty one now falls back to the directory name as well.
+      out.push({ name: singleLine(fm.name) ?? e.name, dir: skillDir, description: fm.description, scope });
     } catch {
       /* unreadable skill dir — skip, never break the hook */
     }

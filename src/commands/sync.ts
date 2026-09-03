@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import { publisherOf } from "../discover.js";
-import { parseFrontmatter } from "../frontmatter.js";
+import { parseFrontmatter, singleLine } from "../frontmatter.js";
 import { loadIndex } from "../index/read.js";
 import { refreshIndex } from "../index/refresh.js";
 import { readLock, writeLock } from "../lock.js";
@@ -29,7 +29,7 @@ function installedVersion(skill: string): string | undefined {
   for (const dir of [claudeUserSkillsDir(), agentsSkillsDir()]) {
     try {
       const md = fs.readFileSync(path.join(dir, skill, "SKILL.md"), "utf8");
-      return parseFrontmatter(md).version;
+      return singleLine(parseFrontmatter(md).version); // written to the lock, printed by `list`
     } catch {
       /* try next dir */
     }
