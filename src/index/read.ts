@@ -27,6 +27,23 @@ export interface Hit {
   relevance: number;
 }
 
+// The two thresholds that decide what `find` PRINTS under the rows, and so
+// what the model does next. They are not a gate on the search: every hit is
+// still listed with its own number, because the distributions above say no
+// floor can separate junk from capability phrases. What they gate is the
+// ACTION — a question ready to put to the user, a note to judge the row
+// first, or an instruction to solve the task alone. Left to prose, the rule
+// was ignored: the question printed at relevance 0.08 exactly as it did at
+// 1.58, and a mechanism that costs nothing at the moment the rule says stop
+// is not a rule, it is a suggestion beside a button.
+//
+// 1.0 sits above the measured junk median (0.70) and below the capability
+// median (1.28); 0.5 sits under both, where a row shares a word with the
+// query and little else. Exported so find.ts's bands and the numbers written
+// into the injected protocol cannot drift apart — test/protocol.test.ts
+// asserts the block quotes these very values.
+export const RELEVANCE_BANDS = { ask: 1.0, judge: 0.5 } as const;
+
 // Single characters carry no signal and blow up the term dictionary; version
 // fragments ("1", "2") would otherwise dominate rare-term scoring.
 export function tokenize(s: string): string[] {

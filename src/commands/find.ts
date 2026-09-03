@@ -1,4 +1,4 @@
-import { loadIndex, normaliseQuery, scanResultFromIndex, search } from "../index/read.js";
+import { loadIndex, normaliseQuery, RELEVANCE_BANDS, scanResultFromIndex, search } from "../index/read.js";
 import { metaskillCmd } from "../paths.js";
 import type { IndexRecord } from "../index/types.js";
 import { discoverByQuery, publisherOf } from "../discover.js";
@@ -87,14 +87,15 @@ function line(r: IndexRecord, relevance: number, decision: string, reason: strin
 // The three facts in it are the ones SKILL.md has always required of the
 // question — package, install count, publisher — plus the scan verdict,
 // because a row's `ask` usually rests on one of those two numbers and the
-// user answering deserves to see what it rests on. They are this record's own
+// user answering deserves to see what it rests on. They are the row's own
 // values, in the row's own format: a question quoting a number the row above
 // it does not show is a question the user cannot check.
-function questionLine(r: IndexRecord): string {
-  return (
-    `Ask the user: Install ${r.pkg} (${installsLabel(r)} installs, ` +
-    `publisher ${publisherOf(r.pkg)}, scan ${r.scan}) for this task? yes/no`
-  );
+//
+// Plain fields, not an IndexRecord, because the live-fallback branch has no
+// record — only a Candidate — and the protocol now promises the model a
+// printed question on BOTH branches. One function, one sentence shape.
+function questionLine(pkg: string, installs: string, publisher: string, scan: string): string {
+  return `Ask the user: Install ${pkg} (${installs} installs, publisher ${publisher}, scan ${scan}) for this task? yes/no`;
 }
 
 // find is invoked directly by the in-session model via Bash, with no human
@@ -202,13 +203,21 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
         return 0;
       }
       const top = [...cands].sort((a, b) => b.installs - a.installs)[0]!;
+      // A registry hit carries no relevance — there is no ranked list to
+      // place it in — so the bands below cannot apply to it, and it is always
+      // askable (no scan verdict means `ask`, whatever else is true). It
+      // therefore always gets its question, written out the same way as the
+      // local branch's: the protocol tells the model to relay a printed
+      // `Ask the user:` line, and a branch that printed none would teach it
+      // that the promise is unreliable.
       process.stdout.write(
         `[metaskill] Not in the local index; live search found ${top.pkg} (${top.installs} installs).\n` +
+          `${questionLine(top.pkg, String(top.installs), top.publisher, "unavailable")}\n` +
           // Same --matched carry as the local-index branch below: whichever
           // path led to this confirmed install, the lock should end up with
           // the phrase that found it, or alreadyPresent's short-circuit only
           // works for half of `find`'s outcomes.
-          `Ask the user one question before installing; on an explicit yes run: ${metaskillCmd()} install ${top.pkg} --force --matched "${q}"\n${pluginLine}`,
+          `On the user's explicit yes run: ${metaskillCmd()} install ${top.pkg} --force --matched "${q}"\n${pluginLine}`,
       );
       // The live registry never returns a scan verdict (spec §10 open
       // question, task 14 self-review's known gap) — "unavailable" is a fact
@@ -277,17 +286,40 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     // install because a different package is not. An `auto` row above it (the
     // knob is on) needs no question by definition, so it does not get one.
     const topAsk = askable.find((x) => x.v.decision === "ask");
-    const question = topAsk ? `${questionLine(topAsk.r)}\n` : "";
+    // The bands, applied here rather than described in prose somewhere else.
+    // The question used to print at every relevance — a 0.08 top row got the
+    // same ready-to-relay sentence as a 1.58 one — so the cheapest action was
+    // "ask" exactly where the rule says be silent, and the line carried no
+    // number for the model to catch itself on. Now the row's own relevance
+    // picks which of three lines is printed, and each one names the number it
+    // was decided on. `find` still installs nothing on any band.
+    const verdictLine = !topAsk
+      ? "" // every askable row is `auto` (the knob is on): no question to ask
+      : topAsk.rel >= RELEVANCE_BANDS.ask
+        ? `${questionLine(topAsk.r.pkg, installsLabel(topAsk.r), publisherOf(topAsk.r.pkg), topAsk.r.scan)}\n`
+        : topAsk.rel >= RELEVANCE_BANDS.judge
+          ? `Borderline match (relevance ${topAsk.rel.toFixed(2)}) — judge whether ${topAsk.r.pkg} fits before asking.\n`
+          : `Weak matches only (top relevance ${topAsk.rel.toFixed(2)}) — solve the task yourself.\n`;
     process.stdout.write(
-      `[metaskill] Top matches for "${q}" — find does not install. Judge whether one of these actually fits the task; ` +
-        `if none does, solve it yourself. Before installing any, ask the user ONE question:\n` +
+      // No judgement in the header. It used to open by asking the model to
+      // rule on whether any row fitted, and to fall back on itself if none
+      // did — the same escape hatch the protocol dropped, in the strongest
+      // position it ever held: first sentence of the tool result, read in
+      // the decision turn, six lines above the question. The header now
+      // states the rule and points at the line that has already applied it,
+      // so there is nothing here to adjudicate. test/protocol.test.ts fails
+      // if either wording comes back, in code or in a comment.
+      `[metaskill] Top matches for "${q}" — find does not install. The line under the rows has applied the relevance ` +
+        `rule to the top row you could install: \`Ask the user:\` (relevance >= ${RELEVANCE_BANDS.ask.toFixed(1)}) — put that ` +
+        `question to the user before anything else; \`Borderline match\` — judge whether it fits, then ask; ` +
+        `\`Weak matches only\` (under ${RELEVANCE_BANDS.judge.toFixed(1)}) — solve the task yourself.\n` +
         askable.map((x) => line(x.r, x.rel, x.v.decision, x.v.reason)).join("\n") +
         // The question first, then the command that is only valid once it has
         // been answered. --matched carries this exact (already-normalised)
         // query into the lock on a confirmed install, so a repeat of it
         // short-circuits here next time via alreadyPresent's lock check above
         // — see install.ts.
-        `\n${question}Install only on the user's explicit yes: ${metaskillCmd()} install <pkg> --force --matched "${q}"\n${deniedBlock}${pluginLine}`,
+        `\n${verdictLine}Install only on the user's explicit yes: ${metaskillCmd()} install <pkg> --force --matched "${q}"\n${deniedBlock}${pluginLine}`,
     );
     logFind([], [...askable, ...denied].map(toDiscovered));
     return 0;

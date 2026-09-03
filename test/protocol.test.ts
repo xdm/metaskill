@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { RELEVANCE_BANDS } from "../src/index/read.js";
 import { cliEntryPath } from "../src/paths.js";
 import { protocolText } from "../src/protocol.js";
 
@@ -68,10 +69,11 @@ describe("protocolText", () => {
       "live search found",
       "Refused by policy",
       "No skills found",
-      // The line find.ts now prints for the top askable row. The block tells
-      // the model to relay it verbatim, so the label has to be the one that
-      // actually appears on screen.
+      // The lines find.ts now prints for the top askable row, one per band.
+      // The block tells the model to act on whichever one appears, so the
+      // labels have to be the ones that actually reach the screen.
       "Ask the user:",
+      "Borderline match",
       // A timed-out live lookup and a registry that answered "nothing" are
       // different facts. One label for both would have the model report a
       // coverage gap it never established.
@@ -148,6 +150,27 @@ describe("protocolText", () => {
     expect(t).not.toMatch(/if none does, solve it yourself/i);
   });
 
+  it("quotes the same two numbers find.ts bands on", () => {
+    // The bands are enforced in code (read.ts's RELEVANCE_BANDS, applied by
+    // find.ts) and described here. Two copies of a number drift; this fails
+    // the moment they do, so the constant is the single source and the text
+    // is checked against it.
+    const t = flat();
+    expect(t).toContain(`\`relevance\` >= ${RELEVANCE_BANDS.ask.toFixed(1)}`);
+    expect(t).toContain(`under ${RELEVANCE_BANDS.judge.toFixed(1)}`);
+    expect(RELEVANCE_BANDS.ask).toBeGreaterThan(RELEVANCE_BANDS.judge);
+  });
+
+  it("leaves no judgement in find.ts's own header either", () => {
+    // The block dropped "judge which row, if any, fits the task" — but the
+    // same sentence opened find's output, which the model reads IN the
+    // decision turn, above everything this block says. Removing it from one
+    // document and leaving it in the other changes nothing.
+    expect(FIND_SRC).not.toContain("Judge whether one of these actually fits");
+    expect(FIND_SRC).not.toContain("if none does, solve it yourself");
+    expect(FIND_SRC).not.toContain("ask the user ONE question");
+  });
+
   it("says what to name when no capability phrase is obvious, without gating on it", () => {
     // "fix this failing test" names no capability, so without this the dodge
     // simply moves from "I've got this" to "I cannot form a query".
@@ -203,6 +226,8 @@ describe("skills/metaskill/SKILL.md", () => {
       "Registry did not answer",
       "No skills found",
       "Ask the user:",
+      "Borderline match",
+      "Weak matches only",
     ]) {
       expect(SKILL_MD, `SKILL.md names "${label}"`).toContain(label);
       expect(FIND_SRC, `find.ts prints "${label}"`).toContain(label);
@@ -218,7 +243,12 @@ describe("skills/metaskill/SKILL.md", () => {
       expect(flatMd, `SKILL.md matches ${re}`).toMatch(re);
       expect(protocolText().replace(/\s+/g, " "), `protocol matches ${re}`).toMatch(re);
     }
+    expect(flatMd).toContain(`\`relevance\` >= ${RELEVANCE_BANDS.ask.toFixed(1)}`);
+    expect(flatMd).toContain(`under ${RELEVANCE_BANDS.judge.toFixed(1)}`);
     expect(flatMd).not.toMatch(/decide which row/i);
+    // The permission the bands replace: "a signal for your judgement, not a
+    // verdict" sat three lines above the rule and gave back what it takes.
+    expect(flatMd).not.toMatch(/signal for your judgement/i);
   });
 
   it("names no outcome find can no longer reach", () => {

@@ -314,7 +314,10 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
 
     const refused = await runCli(["install", "anthropics/skills@gizmo"], { home });
     expect(refused.code).toBe(1);
-    expect(refused.stderr).toContain("Needs confirmation (needs your yes — auto-install is off;");
+    // `Needs confirmation` already names the action, so install.ts strips the
+    // reason's own `needs your yes — ` opener at this one wrap site.
+    expect(refused.stderr).toContain("Needs confirmation (auto-install is off;");
+    expect(refused.stderr).not.toContain("needs your yes");
     expect(refused.stderr).toContain("publisher anthropics is allowlisted, scan clean");
     expect(stubCalls(home).filter((c) => c[0] === "add")).toEqual([]);
     expect(readLockFile(home)).toEqual({});
@@ -427,6 +430,68 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     expect(r.stdout).toContain(
       "Ask the user: Install someorg/repo@snorklex (~12 est installs, publisher someorg, scan unknown) for this task? yes/no",
     );
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  // The bands, end to end. The rule lived only in prose for one round, and
+  // prose does not gate anything: a top row scoring 0.08 got the same
+  // ready-to-relay question as one scoring 1.58, so the cheapest action was
+  // "ask" exactly where the rule says be silent — and the question carried no
+  // number to catch it on. `find` applies the bands itself now. One fixture,
+  // three queries, three lines.
+  const bandIndex = (home: string): string =>
+    writeIndex(home, [
+      rec({ name: "snorklex", source: "someorg/repo", pkg: "someorg/repo@snorklex",
+            description: "Snorklex processor: snorklex pipelines, snorklex jobs, snorklex runs, snorklex builds.",
+            installs: 42 }),
+      rec({ name: "widget-press", source: "acme/tools", pkg: "acme/tools@widget-press",
+            description: "Press widgets into shape.", installs: 20 }),
+    ]);
+  const topRelevance = (stdout: string, pkg: string): number => {
+    const row = stdout.split("\n").find((l) => l.includes(`${pkg} (`))!;
+    return Number(/relevance=(\d+\.\d+)/.exec(row)![1]);
+  };
+  // The one line the bands produce. The header names all three labels (it
+  // tells the model what each means), so a whole-stdout assertion would match
+  // the wrong copy — this reads the line that was actually chosen.
+  const verdictLines = (stdout: string): string[] =>
+    stdout
+      .split("\n")
+      .filter((l) => /^(Ask the user: Install|Borderline match|Weak matches only)/.test(l));
+
+  it("band >= 1.0: prints the question and nothing else", async () => {
+    const home = freshHome("find-band-ask");
+    const r = await runCli(["find", "snorklex processor", "--index", bandIndex(home)], { home });
+    expect(topRelevance(r.stdout, "someorg/repo@snorklex")).toBeGreaterThanOrEqual(1);
+    expect(verdictLines(r.stdout)).toEqual([
+      "Ask the user: Install someorg/repo@snorklex (42 installs, publisher someorg, scan clean) for this task? yes/no",
+    ]);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("band 0.5-1.0: prints a judge-first cue, and no question", async () => {
+    const home = freshHome("find-band-mid");
+    const r = await runCli(["find", "snorklex zorbulon", "--index", bandIndex(home)], { home });
+    const rel = topRelevance(r.stdout, "someorg/repo@snorklex");
+    expect(rel).toBeGreaterThanOrEqual(0.5);
+    expect(rel).toBeLessThan(1);
+    // The point of the band: no ready-made question to relay without thinking.
+    expect(verdictLines(r.stdout)).toEqual([
+      "Borderline match (relevance 0.53) — judge whether someorg/repo@snorklex fits before asking.",
+    ]);
+    // ...and the row is still printed, with its number. Bands gate the
+    // action, never the list.
+    expect(r.stdout).toContain("someorg/repo@snorklex (42 installs, scan=clean, relevance=0.53)");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("band < 0.5: says solve it yourself, and no question", async () => {
+    const home = freshHome("find-band-weak");
+    const r = await runCli(["find", "snorklex zorbulon flimscape", "--index", bandIndex(home)], { home });
+    expect(topRelevance(r.stdout, "someorg/repo@snorklex")).toBeLessThan(0.5);
+    expect(verdictLines(r.stdout)).toEqual([
+      "Weak matches only (top relevance 0.31) — solve the task yourself.",
+    ]);
     fs.rmSync(home, { recursive: true, force: true });
   });
 
@@ -600,9 +665,9 @@ describe("find: ranking is a signal, not an action", () => {
   });
 
   it("never lists a denied package under the ask header or beside an install command", async () => {
-    // `deny` rows printed under "ask the user ONE question", above a line
-    // reading `install <pkg> --force`, invite the model to go get approval
-    // for something no flag can install.
+    // `deny` rows printed under the ask header, above a line reading
+    // `install <pkg> --force`, invite the model to go get approval for
+    // something no flag can install.
     const home = freshHome("find-deny");
     const idx = writeIndex(home, [
       rec({ name: "flumbex", source: "anthropics/skills", pkg: "anthropics/skills@flumbex",
@@ -613,7 +678,7 @@ describe("find: ranking is a signal, not an action", () => {
     ]);
     const r = await runCli(["find", "flumbex widget", "--index", idx], { home });
     expect(r.code).toBe(0);
-    const askHeader = r.stdout.indexOf("ask the user ONE question");
+    const askHeader = r.stdout.indexOf("find does not install");
     const forceLine = r.stdout.indexOf("install <pkg> --force");
     const denied = r.stdout.indexOf("anthropics/skills@flumbex ");
     expect(askHeader).toBeGreaterThanOrEqual(0);
@@ -633,7 +698,7 @@ describe("find: ranking is a signal, not an action", () => {
     ]);
     const r = await runCli(["find", "flumbex widget", "--index", idx], { home });
     expect(r.stdout).toContain('No skills found for "flumbex widget"');
-    expect(r.stdout).not.toContain("ask the user ONE question");
+    expect(r.stdout).not.toContain("find does not install");
     expect(r.stdout).not.toContain("install <pkg> --force");
     // No askable row, so there is nothing to ask about. A question naming a
     // package no flag can install is a wasted turn ending in a failed command.
@@ -761,6 +826,16 @@ describe("find: logs what it found, not just the query (task 14)", () => {
     const found = await runCli(["find", "reddit"], { home });
     expect(found.code).toBe(0);
     expect(found.stdout).toContain("live search found modelscope.cn@reddit-helper");
+    // The protocol promises a printed question on this branch too. A registry
+    // hit has no relevance to band and no scan verdict, so it is always
+    // askable and always gets one; a branch that printed none would teach the
+    // model the promise is unreliable.
+    expect(found.stdout).toContain(
+      "Ask the user: Install modelscope.cn@reddit-helper (146100 installs, publisher modelscope.cn, scan unavailable) for this task? yes/no",
+    );
+    expect(found.stdout.indexOf("Ask the user: Install")).toBeLessThan(
+      found.stdout.indexOf("On the user's explicit yes run:"),
+    );
     expect(readLastLog(home).discovered).toEqual([
       { pkg: "modelscope.cn@reddit-helper", installs: 146100, publisher: "modelscope.cn", decision: "ask", scan: "unavailable" },
     ]);
@@ -904,7 +979,7 @@ describe("find -> install --matched: the phrase a confirmed install records", ()
     expect(found.code).toBe(0);
     expect(found.stdout).toContain("live search found modelscope.cn@reddit-helper");
 
-    const cmdLine = found.stdout.split("\n").find((l) => l.includes("Ask the user one question before installing"));
+    const cmdLine = found.stdout.split("\n").find((l) => l.includes("On the user's explicit yes run:"));
     expect(cmdLine).toBeDefined();
     const pkgMatch = /install (\S+@\S+) --force/.exec(cmdLine!);
     expect(pkgMatch?.[1]).toBe("modelscope.cn@reddit-helper");

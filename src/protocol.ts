@@ -40,8 +40,21 @@ import { metaskillCmd } from "./paths.js";
 //     below the capability median, so "at or above 1.0, ask" fires on nearly
 //     every real phrase and rarely on junk, and 0.5 sits under both
 //     distributions, where a row shares a word with the query and nothing
-//     more. The numbers live here, not in the injected text: the text says
-//     what to do, and the reader cannot check a distribution anyway.
+//     more. Prose alone did not hold: with the bands stated only here, the
+//     ready-made question still printed at relevance 0.08, and a mechanism
+//     that costs nothing exactly where the rule says stop is not a rule. So
+//     `find` applies the bands itself (read.ts's RELEVANCE_BANDS) and prints
+//     one line — `Ask the user:`, `Borderline match`, or `Weak matches only`
+//     — and this block tells the model that that line, not its own reading of
+//     the list, says what happens next. The two numbers quoted here are the
+//     ones in RELEVANCE_BANDS; test/protocol.test.ts imports the constant and
+//     fails if the text drifts from it.
+//   - The bands apply to `Top matches` only, and `live search found` gets its
+//     own line. A registry hit has no relevance to band — there is no ranked
+//     list to place it in — and it is always askable, so it always prints a
+//     question. Folded into one bullet with `Top matches`, the gate read as
+//     applying to a branch that prints no number, which is guidance the
+//     output cannot honour.
 //   - It says what a low `relevance` means and what to do about it. Removing
 //     the hard floor made the model's judgement the only filter, and `find`
 //     prints a number the model has never been told how to read — beside a
@@ -79,28 +92,28 @@ export function protocolText(): string {
     "",
     "At the start of every task, before you begin work, run:",
     "",
-    `  ${metaskillCmd()} find "<2-4 english words for the capability>"`,
+    `  ${metaskillCmd()} find "<2-4 words for the capability>"`,
     "",
     "Run it before answering, not after.",
     "Run it even when you are sure no skill is needed — checking that is its job.",
-    "Once per task, not once per session; only pure conversation is exempt.",
+    "Once per task, not once per session; pure conversation is exempt.",
     "",
-    "It ranks and vets; it never installs. Nothing reaches disk without the",
-    "user's explicit yes — unless they set `trust.auto_install: true`.",
+    "It never installs. Nothing reaches disk without the user's explicit yes",
+    "— unless they set `trust.auto_install: true`.",
     "",
     "The user's prompt may be in any language; the query is always English,",
-    "derived from the task rather than translated. Name the artefact or domain,",
-    "not the action: a file format, framework, platform API, or a craft like",
-    "SEO or copywriting.",
+    "derived from the task, not translated. Name the artefact or domain, not",
+    "the action: a file format, framework, platform API, or a craft like SEO.",
     "",
     "Act on what it prints:",
     "- `Already present:` — read that SKILL.md and follow it.",
-    "- `Top matches` / `live search found` — top row `relevance` >= 1.0: put its",
-    "  printed `Ask the user:` question to the user before anything else. Under",
-    "  0.5, a low `relevance` means it barely matched — decline it, silently. In",
-    "  between, judge. Install only on an explicit yes, with the command printed.",
+    "- `Top matches` — the line under the rows says what to do with the row it",
+    "  names: `Ask the user:` (`relevance` >= 1.0) — put that question to the",
+    "  user before anything else; `Borderline match` — judge, then ask; a low",
+    "  `relevance` (under 0.5) means it barely matched — decline it, in silence.",
+    "- `live search found` — no relevance to weigh; relay its printed question.",
     "- `Refused by policy` — no flag installs these. Never offer them.",
     "- `Registry did not answer` — not a miss. Retry once, or solve it.",
-    "- `No skills found` — solve the task yourself, and say nothing about metaskill.",
+    "- `No skills found` — solve it yourself; say nothing about metaskill.",
   ].join("\n");
 }

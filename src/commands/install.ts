@@ -64,7 +64,11 @@ export async function installCommand(pkg: string | undefined, flags: InstallFlag
   }
   if (verdict.decision === "ask" && !flags.force) {
     process.stderr.write(
-      `Needs confirmation (${verdict.reason}). Re-run with --force after the user has approved it.\n`,
+      // `Needs confirmation` already names the action, so the reason's own
+      // `needs your yes — ` opener (policy.ts) would say it twice here. It is
+      // stripped at this one wrap site only; everywhere the reason stands on
+      // its own — every row `find` prints — it keeps the prefix.
+      `Needs confirmation (${verdict.reason.replace(/^needs your yes — /, "")}). Re-run with --force after the user has approved it.\n`,
     );
     return 1;
   }

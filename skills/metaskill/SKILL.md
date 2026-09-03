@@ -10,21 +10,16 @@ SessionStart hook: a standing protocol naming a `find` command. That block is
 self-contained — this skill is the longer reference for the same rules, not
 the only place they live. Running `find` prints its own `[metaskill]` line
 naming what it found and what policy thinks of each candidate (see "On `find`"
-below); UserPromptSubmit no longer classifies or prints anything.
+below).
 
 ## On "Needs confirmation"
 
-Ask the user exactly ONE short question before doing anything with that skill:
-what the skill is, who publishes it, how many installs, and why the task needs
-it. Example:
-
-> The task looks like it needs xlsx charts. Found `foo/bar@xlsx-charts`
-> (410 installs, publisher not on your allowlist). Install it? (yes/no)
-
-- If the user says yes, run the `install <pkg> --force` command exactly as
-  the block printed it (see Rules).
-- If no (or no clear yes), solve the task without it. Never install on an
-  assumed or implied approval.
+`install` prints this when policy says `ask` and no `--force` was given. Put
+exactly ONE short question to the user — what the skill is, who publishes it,
+how many installs, why the task needs it — and on an explicit yes re-run the
+`install <pkg> --force` command exactly as it was printed (see Rules). No
+answer, or no clear yes, means solve the task without it; never install on an
+assumed or implied approval.
 
 ## On `find`
 
@@ -48,30 +43,34 @@ and even then it is `install` that acts, never `find`).
 `relevance` is BM25's report of how much of your query a row matched, on a
 scale that means the same thing whatever index is loaded. A full match sits
 around 1.0 or above; a low `relevance` means the row barely matched the words
-— decline it. It is a signal for your judgement, not a verdict: a row can
-rank first, carry a reassuring policy reason, and still have nothing to do
-with the task.
+— decline it.
 
-So the top row's number decides whether the user hears about it at all, and
-it is a rule, not a call you make:
+The number on the row `find` singles out decides what happens next, and it is
+a rule, not a call you make. `find` applies it for you: under the rows it
+prints exactly one line, about the top row you could still install.
 
-- **`relevance` >= 1.0** — put the printed `Ask the user:` question to the
-  user, before anything else. Not after you have started the task, not
-  bundled into a longer answer, and not silently skipped because you could
-  do the task yourself. You almost always could; that is not what the
-  question is for.
-- **under 0.5** — decline it and say nothing. The row shares a word with your
-  query and little else.
-- **in between** — judge it, and ask if it fits.
+- **`Ask the user: Install ... ? yes/no`** (`relevance` >= 1.0) — put that
+  question to the user, before anything else. Not after you have started the
+  task, not bundled into a longer answer, and not left unasked because you
+  could do the task yourself. You almost always could; that is not what the
+  question is for. The line already names the package, its install count, its
+  publisher and its scan verdict, so relay it as printed.
+- **`Borderline match`** (`relevance` >= 0.5) — judge whether that row really
+  fits the task, and ask only if it does.
+- **`Weak matches only`** (under 0.5) — decline and say nothing. The row
+  shares a word with your query and little else.
+
+A **`live search found`** hit is different: the registry returns no relevance,
+so there is no band to apply, and with no scan verdict it is always `ask`. It
+always prints its question — relay that one too.
 
 Act on what it prints:
 
 - **`Already present:`** — read that SKILL.md and follow it.
-- **`Top matches for ...`** / **`live search found ...`** — apply the rule
-  above. `find` prints the question ready to relay (`Ask the user: Install
-  <pkg> (...) for this task? yes/no`) — it already names the package, its
-  install count, its publisher and its scan verdict. Install only on an
-  explicit yes, using the command that line prints.
+- **`Top matches for ...`** / **`live search found ...`** — the line under
+  the rows is the instruction; `find` has already applied the rule above to
+  the row it names. Install only on an explicit yes, using the command that
+  line prints.
 - **`Refused by policy`** — those packages are not installable by any flag.
   Never offer them; do not ask about them.
 - **`Registry did not answer`** — a lookup that never completed, not evidence

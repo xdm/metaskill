@@ -63,7 +63,7 @@ Between pressing Enter and Claude's first token:
    each one past the trust policy:
 
 ```
-[metaskill] Top matches for "xlsx export formulas" — find does not install. Judge whether one of these actually fits the task; if none does, solve it yourself. Before installing any, ask the user ONE question:
+[metaskill] Top matches for "xlsx export formulas" — find does not install. The line under the rows has applied the relevance rule to the top row you could install: `Ask the user:` (relevance >= 1.0) — put that question to the user before anything else; `Borderline match` — judge whether it fits, then ask; `Weak matches only` (under 0.5) — solve the task yourself.
   aiskillstore/marketplace@xlsx (237 installs, scan=unknown, relevance=1.12) [ask: needs your yes — publisher aiskillstore not allowlisted]
     Spreadsheet toolkit (.xlsx/.csv). Create/edit with formulas/formatting, analyze data, visualization, recalculate formulas, for spreadsheet p
   davila7/claude-code-templates@xlsx (949 installs, scan=clean, relevance=1.12) [ask: needs your yes — publisher davila7 not allowlisted]
@@ -81,18 +81,16 @@ Install only on the user's explicit yes: "/Users/you/.nvm/versions/node/v24.17.0
 4. **`find` installs nothing. It ranks, vets, and stops.** Each row carries
    its install count, scan verdict, `relevance` (how much of the query the
    row matched, on a scale that means the same thing whatever index you have
-   loaded) and the policy's verdict. Ranking is not judgement: BM25 can tell
-   you that a row repeats your words, not that it answers your task — so the
-   choice belongs to the reader who understands the task, and Claude makes it
-   here. The last row is allowlisted with a clean scan, and reads
-   `auto-install is off` because that is the shipped default: the verdict is
-   computed in full, then held for your yes.
-5. So Claude picks the row that fits and puts the question to you — already
-   written out, naming the package, its publisher, its install count and its
-   scan verdict, because a question Claude has to compose is a question it
-   talks itself out of asking. It installs only on an explicit yes, with the
-   command that line printed. If nothing on the list fits, it says so and
-   solves the task itself.
+   loaded) and the policy's verdict. The last row is allowlisted with a clean
+   scan, and reads `auto-install is off` because that is the shipped default:
+   the verdict is computed in full, then held for your yes.
+5. The last line is the one Claude acts on. Above 1.0 relevance the question
+   is written out for it — package, publisher, install count, scan verdict —
+   because a question Claude has to compose is a question it talks itself out
+   of asking. Between 0.5 and 1.0 it gets `Borderline match` and has to judge
+   the row first; below 0.5, `Weak matches only` and it solves the task
+   itself. Nothing installs without your explicit yes, with the command that
+   line printed.
 
 A local index hit like this is one fast subprocess call; installing a skill —
 or, on an index miss, the one live registry search, capped at 4 seconds — is
@@ -393,7 +391,7 @@ parked for the next session).
 
 ```
 npm install
-npm test          # build + 241 unit/integration tests (stubbed skills CLI, temp HOME)
+npm test          # build + 246 unit/integration tests (stubbed skills CLI, temp HOME)
 ```
 
 The registry index (`index.json`) is built separately from the CLI and is not
