@@ -52,13 +52,13 @@ line that decides, about the top row you could still install.
   question is for. But a rare word scores high in the wrong sense too, so if
   it is a different thing with the same word — an `insomnia` REST client for
   a sleep question — say nothing and solve the task. A blank description, or
-  a bare `>` or `|`, confirms nothing — say nothing and solve the task.
+  a bare `>` or `|`, confirms nothing: no question is printed for a row you
+  cannot check — say nothing and solve the task.
 - **`Borderline match`** (`relevance` >= 0.5) — judge whether that row really
   fits the task. The cue prints the question for you — "ask exactly this,
   first — via the tool if you have it, else as one line and nothing else:
   ..." — so if it fits, ask that, first.
-- **`Weak matches only`** (under 0.5) — decline and say nothing. The row
-  shares a word with your query and little else.
+- **`Weak matches only`** (under 0.5) — decline and say nothing.
 
 Asking means asking before you start the task, not inside an answer you have
 already begun: use the `AskUserQuestion` tool if you have it — option label

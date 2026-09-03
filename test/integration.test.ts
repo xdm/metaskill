@@ -490,6 +490,11 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
         "and solve the task.",
       "Ask the user: Install someorg/repo@snorklex (42 installs, publisher someorg, scan clean) for this task? yes/no",
     ]);
+    // A readable description changes nothing: the question and the command
+    // print exactly as they did before the unreadable case was carved out.
+    expect(r.stdout).toContain(
+      `Install only on the user's explicit yes: "${process.execPath}" "${CLI}" install someorg/repo@snorklex --force`,
+    );
     fs.rmSync(home, { recursive: true, force: true });
   });
 
@@ -518,18 +523,39 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     // The row prints the mark it has, so the model can see there is nothing
     // to read...
     expect(r.stdout).toContain("someorg/repo@snorklex (42 installs, scan=clean, relevance=");
-    // ...and the cue tells it what that means. Without this clause the two
-    // branches on screen ("fits the task" / "a different thing with the same
-    // word") both assume text, and a blank description is neither.
-    expect(verdictLines(r.stdout)[0]).toContain(
-      "if the description is blank or a bare mark (`>`, `|`), you cannot confirm the fit — " +
-        "say nothing and solve the task.",
-    );
-    // The question is still there: the user may still say yes, and the model
-    // must not have to compose the sentence if they do.
-    expect(verdictLines(r.stdout)[1]).toBe(
-      "Ask the user: Install someorg/repo@snorklex (42 installs, publisher someorg, scan clean) for this task? yes/no",
-    );
+    // ...and the ONLY line under the rows says so, with no question and no
+    // command beneath it. A cue ending "say nothing and solve the task" over
+    // a free-standing `Ask the user: Install X?` is the shape that was cut
+    // from the weak band: the actionable line wins at reading speed, and the
+    // stop instruction above it is decoration. A check that cannot be made
+    // must not be followed by the sentence it was there to gate.
+    expect(verdictLines(r.stdout)).toEqual([
+      "Likely fit (relevance 1.47) — but someorg/repo@snorklex's description is blank or a bare mark (`>`, `|`): " +
+        "nothing here can confirm the fit, so no question is printed. Say nothing and solve the task.",
+    ]);
+    expect(r.stdout.split("\n").filter((l) => l.startsWith("Ask the user:"))).toEqual([]);
+    expect(r.stdout).not.toContain("Install only on the user's explicit yes:");
+    expect(r.stdout).not.toContain(" install someorg/repo@snorklex");
+    expect(r.stdout).not.toContain("--force");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("band >= 1.0 with an empty description: same silence, no question, no command", async () => {
+    // The other half of the same defect. `""` and `>` reach the index by
+    // different routes — a missing key and a YAML block scalar the builder
+    // kept the marker of — and one regex covers both, in the one helper the
+    // cue text and this gate share.
+    const home = freshHome("find-band-ask-empty");
+    const idx = writeIndex(home, [
+      rec({ name: "snorklex", source: "someorg/repo", pkg: "someorg/repo@snorklex", description: "", installs: 42 }),
+      rec({ name: "widget-press", source: "acme/tools", pkg: "acme/tools@widget-press",
+            description: "Press widgets into shape.", installs: 20 }),
+    ]);
+    const r = await runCli(["find", "snorklex", "--index", idx], { home });
+    expect(topRelevance(r.stdout, "someorg/repo@snorklex")).toBeGreaterThanOrEqual(1);
+    expect(verdictLines(r.stdout)[0]).toContain("nothing here can confirm the fit, so no question is printed.");
+    expect(r.stdout.split("\n").filter((l) => l.startsWith("Ask the user:"))).toEqual([]);
+    expect(r.stdout).not.toContain("Install only on the user's explicit yes:");
     fs.rmSync(home, { recursive: true, force: true });
   });
 

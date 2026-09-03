@@ -205,7 +205,16 @@ describe("protocolText", () => {
     expect(FIND_SRC, "the cue covers a description it cannot read").toContain(
       "if the description is blank or a bare mark",
     );
+    // ...and where it cannot be read at all, the cue says so INSTEAD of the
+    // question: a stop instruction with a ready-made `Ask the user:` line
+    // under it is the shape ruling 44 removed from the weak band. One helper
+    // decides both the sentence and the suppression, so they cannot drift.
+    expect(FIND_SRC, "the unreadable case prints no question").toContain("so no question is printed");
+    expect(FIND_SRC, "one helper decides it").toContain("function descriptionUnreadable(");
     expect(SKILL_MD.replace(/\s+/g, " "), "SKILL.md covers it too").toContain("A blank description");
+    expect(SKILL_MD.replace(/\s+/g, " "), "SKILL.md says the question is conditional").toContain(
+      "no question is printed for a row you cannot check",
+    );
     expect(SKILL_MD.replace(/\s+/g, " "), "SKILL.md states the description check").toContain(
       "read the row's description",
     );

@@ -54,6 +54,23 @@ function alreadyPresent(q: string, installed: InstalledSkill[]): InstalledSkill 
   return matched ? installed.find((s) => s.name === matched.skill) : undefined;
 }
 
+// The one test for "this row's description tells the reader nothing", used by
+// BOTH the >= 1.0 cue's wording and the gate that suppresses the question
+// under it — one function, so the sentence on screen and the lines printed
+// beneath it can never disagree about the same row.
+//
+// 900 of the shipped snapshot's 4,831 records land here (18.6%): the registry
+// carries YAML block-scalar markers where a description should be, so the
+// index stores `>`, `|`, `>-` or an empty string. Those rows still rank —
+// on the skill NAME alone, which is exactly how a name-shaped match reaches a
+// high relevance with nothing behind it. The indexer-side defect is deferred;
+// this is the runtime refusing to act on data it cannot read.
+const BARE_BLOCK_MARK = /^[>|][+-]?$/;
+function descriptionUnreadable(description: string | null | undefined): boolean {
+  const d = (description ?? "").trim();
+  return d.length === 0 || BARE_BLOCK_MARK.test(d);
+}
+
 // Shared by the row and the question printed under it, so the two can never
 // disagree about a count the user is being asked to weigh. `~N est` is a
 // prior guessed from sibling skills; dropped, it would reach the user as a
@@ -300,6 +317,16 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     // install because a different package is not. An `auto` row above it (the
     // knob is on) needs no question by definition, so it does not get one.
     const topAsk = askable.find((x) => x.v.decision === "ask");
+    // The >= 1.0 band with nothing to read on the row it would ask about.
+    // Computed once, here, because it decides BOTH what the cue says and
+    // whether a question and an install command print under it — the same
+    // shape ruling 44 removed from the weak band, where "solve the task
+    // yourself" sat one line above the only actionable command on screen. A
+    // cue ending "you cannot confirm the fit — say nothing" with a
+    // free-standing `Ask the user: Install X?` under it is that contradiction
+    // again, and the actionable line wins at reading speed every time.
+    const askBandUnreadable =
+      !!topAsk && topAsk.rel >= RELEVANCE_BANDS.ask && descriptionUnreadable(topAsk.r.description);
     // The bands, applied here rather than described in prose somewhere else.
     // The question used to print at every relevance — a 0.08 top row got the
     // same ready-to-relay sentence as a 1.58 one — so the cheapest action was
@@ -331,25 +358,29 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
           // "no". It goes on its own line ABOVE the question, because a model
           // that reads the relayable sentence first has already acted.
           //
-          // The third clause is for the rows that have nothing to read: 900
-          // of the shipped snapshot's 4,831 records carry a description that
-          // is blank or a bare YAML block mark (`>`, `|`, `>-`) — 18.6%, and
-          // 7 of the 44 answerable fixture queries hit one as their TOP row
-          // (`insomnia help`, `home workout`, `goal setting`, `public
-          // speaking`, `investing basics`, `tax filing personal`, `home
-          // organization`). "Fits the task" and "a different thing with the
-          // same word" both assume text; a blank one is neither, so without
-          // this clause the cue on screen gives no instruction at all in a
-          // case it reaches nearly a fifth of the time. It resolves the same
-          // way silence always does here: an unconfirmable fit is not a fit.
-          // (The indexer-side defect — descriptions lost to YAML block
-          // scalars — is deferred separately; this is the runtime's answer
-          // to data it cannot trust.)
-          `Likely fit (relevance ${topAsk.rel.toFixed(2)}) — read the row's description first: if it fits the task, ` +
-          `ask the question below, first, via the tool if you have it; if it is a different thing with the same word, ` +
-          `say nothing and solve the task; if the description is blank or a bare mark (\`>\`, \`|\`), you cannot ` +
-          `confirm the fit — say nothing and solve the task.\n` +
-          `${questionLine(topAsk.r.pkg, installsLabel(topAsk.r), publisherOf(topAsk.r.pkg), topAsk.r.scan)}\n`
+          // The rows with nothing to read get a different line and NO
+          // question: 900 of the snapshot's 4,831 records carry a blank or
+          // bare-block-mark description (18.6%), and 7 of the 44 answerable
+          // fixture queries hit one as their TOP row (`insomnia help`, `home
+          // workout`, `goal setting`, `public speaking`, `investing basics`,
+          // `tax filing personal`, `home organization`). "Fits the task" and
+          // "a different thing with the same word" both assume text, so the
+          // check cannot be made at all — and a check that cannot be made
+          // must not be followed by the sentence it was supposed to gate.
+          // The line says why nothing is printed, because the protocol
+          // promises a question in this band and a model that expects one and
+          // finds none will compose its own. (The indexer-side defect —
+          // descriptions lost to YAML block scalars — is deferred; this is
+          // the runtime refusing to act on data it cannot read.)
+          askBandUnreadable
+          ? `Likely fit (relevance ${topAsk.rel.toFixed(2)}) — but ${topAsk.r.pkg}'s description is blank or a bare ` +
+            `mark (\`>\`, \`|\`): nothing here can confirm the fit, so no question is printed. Say nothing and ` +
+            `solve the task.\n`
+          : `Likely fit (relevance ${topAsk.rel.toFixed(2)}) — read the row's description first: if it fits the task, ` +
+            `ask the question below, first, via the tool if you have it; if it is a different thing with the same word, ` +
+            `say nothing and solve the task; if the description is blank or a bare mark (\`>\`, \`|\`), you cannot ` +
+            `confirm the fit — say nothing and solve the task.\n` +
+            `${questionLine(topAsk.r.pkg, installsLabel(topAsk.r), publisherOf(topAsk.r.pkg), topAsk.r.scan)}\n`
         : topAsk.rel >= RELEVANCE_BANDS.judge
           ? `Borderline match (relevance ${topAsk.rel.toFixed(2)}) — judge whether ${topAsk.r.pkg} fits. ` +
             `If it does, ask exactly this, first — via the tool if you have it, else as one line and nothing else: ` +
@@ -359,7 +390,10 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     // is printed. Left in place it was the only actionable line on screen,
     // one line under "solve the task yourself" and with exactly one askable
     // package named above it — the contradiction the bands exist to remove,
-    // reproduced inside the band. Every other case keeps the line: the
+    // reproduced inside the band. The unreadable-description case at >= 1.0
+    // is the same shape and drops it for the same reason: the cue there ends
+    // in "say nothing and solve the task", and an install command under that
+    // sentence is an invitation to ignore it. Every other case keeps the line: the
     // borderline cue now ends in a question to ask, the ask band has its
     // own, and with no row named (all askable rows `auto`, the knob on) the
     // template is all there is to print.
@@ -387,7 +421,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     // wrong package, or a refusal to run it at all, gets in. The live branch
     // has always printed the real package; these two branches now agree.
     const installLine =
-      topAsk && topAsk.rel < RELEVANCE_BANDS.judge
+      topAsk && (topAsk.rel < RELEVANCE_BANDS.judge || askBandUnreadable)
         ? ""
         : `Install only on the user's explicit yes: ${metaskillCmd()} install ${topAsk?.r.pkg ?? "<pkg>"} --force --matched "${q}"\n`;
     process.stdout.write(
