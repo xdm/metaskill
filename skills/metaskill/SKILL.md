@@ -7,8 +7,7 @@ description: Protocol for handling the [metaskill] block in context. Use in ever
 
 metaskill injects one `[metaskill]` block into your context, from a
 SessionStart hook: a standing protocol naming a `find` command. That block is
-self-contained — this skill is the longer reference for the same rules, not
-the only place they live.
+self-contained — this skill is the longer reference for the same rules.
 
 ## On "Needs confirmation"
 
@@ -51,9 +50,7 @@ line that decides, about the top row you could still install.
   could do the task yourself: you almost always could; that is not what the
   question is for. But a rare word scores high in the wrong sense too, so if
   it is a different thing with the same word — an `insomnia` REST client for
-  a sleep question — say nothing and solve the task. A blank description, or
-  a bare `>` or `|`, confirms nothing: no question is printed for a row you
-  cannot check — say nothing and solve the task.
+  a sleep question — say nothing and solve the task.
 - **`Borderline match`** (`relevance` >= 0.5) — judge whether that row really
   fits the task. The cue prints the question for you — "ask exactly this,
   first — via the tool if you have it, else as one line and nothing else:
@@ -63,7 +60,10 @@ line that decides, about the top row you could still install.
 Asking means asking before you start the task, not inside an answer you have
 already begun: use the `AskUserQuestion` tool if you have it — option label
 `Install <skill name>`, the full package in its description, `No` as the
-other option — else send one line of text and nothing else.
+other option — else send one line of text and nothing else. Neither asking
+band asks about a row whose description is blank or a bare `>` or `|`: no
+question is printed for a row you cannot check — say nothing and solve the
+task.
 
 A **`live search found`** hit has no relevance to band and no scan verdict,
 so it is always `ask`. It prints its question — ask it the same way.

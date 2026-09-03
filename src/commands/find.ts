@@ -317,7 +317,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     // install because a different package is not. An `auto` row above it (the
     // knob is on) needs no question by definition, so it does not get one.
     const topAsk = askable.find((x) => x.v.decision === "ask");
-    // The >= 1.0 band with nothing to read on the row it would ask about.
+    // An asking band with nothing to read on the row it would ask about.
     // Computed once, here, because it decides BOTH what the cue says and
     // whether a question and an install command print under it — the same
     // shape ruling 44 removed from the weak band, where "solve the task
@@ -325,8 +325,22 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     // cue ending "you cannot confirm the fit — say nothing" with a
     // free-standing `Ask the user: Install X?` under it is that contradiction
     // again, and the actionable line wins at reading speed every time.
-    const askBandUnreadable =
-      !!topAsk && topAsk.rel >= RELEVANCE_BANDS.ask && descriptionUnreadable(topAsk.r.description);
+    //
+    // BOTH asking bands, not just >= 1.0: `Borderline match` says "judge
+    // whether X fits" and then hands over a ready question, which on a row
+    // whose description is `>` asks the model to judge from nothing — and
+    // that is not a corner case but the measured one. `insomnia help` scores
+    // 0.58 against the shipped snapshot with a bare-mark description on its
+    // top row. The band boundary is about how much of the query matched; it
+    // says nothing about whether there is any evidence to read, so the gate
+    // sits above both bands and below neither.
+    const unreadableTopAsk =
+      !!topAsk && topAsk.rel >= RELEVANCE_BANDS.judge && descriptionUnreadable(topAsk.r.description);
+    // Same sentence for both bands, differing only in the label the band
+    // owns: one function, so a reworded cue cannot say two things.
+    const unreadableCue = (band: string, rel: number, pkg: string): string =>
+      `${band} (relevance ${rel.toFixed(2)}) — but ${pkg}'s description is blank or a bare mark (\`>\`, \`|\`): ` +
+      `nothing here can confirm the fit, so no question is printed. Say nothing and solve the task.\n`;
     // The bands, applied here rather than described in prose somewhere else.
     // The question used to print at every relevance — a 0.08 top row got the
     // same ready-to-relay sentence as a 1.58 one — so the cheapest action was
@@ -372,28 +386,28 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
           // finds none will compose its own. (The indexer-side defect —
           // descriptions lost to YAML block scalars — is deferred; this is
           // the runtime refusing to act on data it cannot read.)
-          askBandUnreadable
-          ? `Likely fit (relevance ${topAsk.rel.toFixed(2)}) — but ${topAsk.r.pkg}'s description is blank or a bare ` +
-            `mark (\`>\`, \`|\`): nothing here can confirm the fit, so no question is printed. Say nothing and ` +
-            `solve the task.\n`
+          unreadableTopAsk
+          ? unreadableCue("Likely fit", topAsk.rel, topAsk.r.pkg)
           : `Likely fit (relevance ${topAsk.rel.toFixed(2)}) — read the row's description first: if it fits the task, ` +
             `ask the question below, first, via the tool if you have it; if it is a different thing with the same word, ` +
             `say nothing and solve the task; if the description is blank or a bare mark (\`>\`, \`|\`), you cannot ` +
             `confirm the fit — say nothing and solve the task.\n` +
             `${questionLine(topAsk.r.pkg, installsLabel(topAsk.r), publisherOf(topAsk.r.pkg), topAsk.r.scan)}\n`
         : topAsk.rel >= RELEVANCE_BANDS.judge
-          ? `Borderline match (relevance ${topAsk.rel.toFixed(2)}) — judge whether ${topAsk.r.pkg} fits. ` +
-            `If it does, ask exactly this, first — via the tool if you have it, else as one line and nothing else: ` +
-            `${questionSentence(topAsk.r.pkg, installsLabel(topAsk.r), publisherOf(topAsk.r.pkg), topAsk.r.scan)}\n`
+          ? unreadableTopAsk
+            ? unreadableCue("Borderline match", topAsk.rel, topAsk.r.pkg)
+            : `Borderline match (relevance ${topAsk.rel.toFixed(2)}) — judge whether ${topAsk.r.pkg} fits. ` +
+              `If it does, ask exactly this, first — via the tool if you have it, else as one line and nothing else: ` +
+              `${questionSentence(topAsk.r.pkg, installsLabel(topAsk.r), publisherOf(topAsk.r.pkg), topAsk.r.scan)}\n`
           : `Weak matches only (top relevance ${topAsk.rel.toFixed(2)}) — solve the task yourself.\n`;
     // Below the judge band there is nothing to install, so no install command
     // is printed. Left in place it was the only actionable line on screen,
     // one line under "solve the task yourself" and with exactly one askable
     // package named above it — the contradiction the bands exist to remove,
-    // reproduced inside the band. The unreadable-description case at >= 1.0
-    // is the same shape and drops it for the same reason: the cue there ends
-    // in "say nothing and solve the task", and an install command under that
-    // sentence is an invitation to ignore it. Every other case keeps the line: the
+    // reproduced inside the band. The unreadable-description case in either
+    // asking band is the same shape and drops it for the same reason: the cue
+    // ends in "say nothing and solve the task", and an install command under
+    // that sentence is an invitation to ignore it. Every other case keeps the line: the
     // borderline cue now ends in a question to ask, the ask band has its
     // own, and with no row named (all askable rows `auto`, the knob on) the
     // template is all there is to print.
@@ -421,7 +435,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     // wrong package, or a refusal to run it at all, gets in. The live branch
     // has always printed the real package; these two branches now agree.
     const installLine =
-      topAsk && (topAsk.rel < RELEVANCE_BANDS.judge || askBandUnreadable)
+      topAsk && (topAsk.rel < RELEVANCE_BANDS.judge || unreadableTopAsk)
         ? ""
         : `Install only on the user's explicit yes: ${metaskillCmd()} install ${topAsk?.r.pkg ?? "<pkg>"} --force --matched "${q}"\n`;
     process.stdout.write(

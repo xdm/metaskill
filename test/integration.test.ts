@@ -592,6 +592,38 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     fs.rmSync(home, { recursive: true, force: true });
   });
 
+  it("borderline band with nothing to read: the same silence, no question, no command", async () => {
+    // The measured case, not a hypothetical: `insomnia help` scores 0.58
+    // against the shipped snapshot and its top row's description is a bare
+    // `>`. "Judge whether X fits" over a row with nothing to judge, followed
+    // by a ready-made question, is the >= 1.0 defect one band down — the band
+    // boundary is about how much of the query matched and says nothing about
+    // whether there is any evidence to read. Same helper, same sentence, only
+    // the label differs.
+    const home = freshHome("find-band-mid-blank");
+    const idx = writeIndex(home, [
+      rec({ name: "snorklex", source: "someorg/repo", pkg: "someorg/repo@snorklex", description: ">", installs: 42 }),
+      // Carries the query's other term once, so `zorbulon` is not a hapax
+      // whose idf would drag the top row under 0.5 — and stays far enough
+      // behind that the unreadable row is the one the band speaks about.
+      rec({ name: "widget-press", source: "acme/tools", pkg: "acme/tools@widget-press",
+            description: "Zorbulon widgets.", installs: 20 }),
+    ]);
+    const r = await runCli(["find", "snorklex zorbulon", "--index", idx], { home });
+    const rel = topRelevance(r.stdout, "someorg/repo@snorklex");
+    expect(rel).toBeGreaterThanOrEqual(0.5);
+    expect(rel).toBeLessThan(1);
+    expect(verdictLines(r.stdout)).toEqual([
+      `Borderline match (relevance ${rel.toFixed(2)}) — but someorg/repo@snorklex's description is blank or a bare ` +
+        "mark (`>`, `|`): nothing here can confirm the fit, so no question is printed. Say nothing and solve the task.",
+    ]);
+    expect(r.stdout).not.toContain("ask exactly this");
+    expect(r.stdout).not.toContain("for this task? yes/no");
+    expect(r.stdout).not.toContain("Install only on the user's explicit yes:");
+    expect(r.stdout).not.toContain("--force");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
   it("README quotes the header find actually prints", async () => {
     // README's walkthrough pastes find's output verbatim, and nothing checked
     // it: the relevance-rule clause in the header could drift in either

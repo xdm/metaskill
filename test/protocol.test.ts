@@ -211,7 +211,18 @@ describe("protocolText", () => {
     // decides both the sentence and the suppression, so they cannot drift.
     expect(FIND_SRC, "the unreadable case prints no question").toContain("so no question is printed");
     expect(FIND_SRC, "one helper decides it").toContain("function descriptionUnreadable(");
-    expect(SKILL_MD.replace(/\s+/g, " "), "SKILL.md covers it too").toContain("A blank description");
+    expect(SKILL_MD.replace(/\s+/g, " "), "SKILL.md covers it too").toContain(
+      "description is blank or a bare `>` or `|`",
+    );
+    // ...for BOTH asking bands. `Borderline match` hands over a ready
+    // question after "judge whether X fits", which on a row described by `>`
+    // asks the model to judge from nothing — measured: `insomnia help` is
+    // 0.58 against the snapshot with exactly that row on top. So the rule
+    // lives in the paragraph that defines asking, not inside one band.
+    expect(SKILL_MD.replace(/\s+/g, " "), "SKILL.md scopes it to both bands").toContain(
+      "Neither asking band asks about a row",
+    );
+    expect(FIND_SRC, "one cue serves both bands").toContain('unreadableCue("Borderline match"');
     expect(SKILL_MD.replace(/\s+/g, " "), "SKILL.md says the question is conditional").toContain(
       "no question is printed for a row you cannot check",
     );
