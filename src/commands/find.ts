@@ -298,16 +298,23 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       : topAsk.rel >= RELEVANCE_BANDS.ask
         ? `${questionLine(topAsk.r.pkg, installsLabel(topAsk.r), publisherOf(topAsk.r.pkg), topAsk.r.scan)}\n`
         : topAsk.rel >= RELEVANCE_BANDS.judge
-          ? `Borderline match (relevance ${topAsk.rel.toFixed(2)}) — judge whether ${topAsk.r.pkg} fits before asking.\n`
+          ? `Borderline match (relevance ${topAsk.rel.toFixed(2)}) — judge whether ${topAsk.r.pkg} fits, then ask first.\n`
           : `Weak matches only (top relevance ${topAsk.rel.toFixed(2)}) — solve the task yourself.\n`;
     // Below the judge band there is nothing to install, so no install command
     // is printed. Left in place it was the only actionable line on screen,
     // one line under "solve the task yourself" and with exactly one askable
     // package named above it — the contradiction the bands exist to remove,
     // reproduced inside the band. Every other case keeps the line: the
-    // borderline cue ends in "then ask", the ask band has its question, and
-    // with no row named (all askable rows `auto`, the knob on) the template
-    // is all there is to print.
+    // borderline cue ends in "then ask first", the ask band has its question,
+    // and with no row named (all askable rows `auto`, the knob on) the
+    // template is all there is to print.
+    //
+    // "then ask first", not "before asking": the borderline band's cue used
+    // to leave the ordering open, and a model that judged a 0.85 row to fit
+    // asked at the END of an answer it had already given. The three documents
+    // that carry this rule — this line, the header above, and the protocol
+    // block — say "first" in the same words, or the one the model reads in
+    // the decision turn is the one that is silent about it.
     //
     // The package is the concrete one the line above names, not `<pkg>`.
     // Rule 1 of SKILL.md is "run the command as printed", and a placeholder
@@ -329,7 +336,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       // if either wording comes back, in code or in a comment.
       `[metaskill] Top matches for "${q}" — find does not install. The line under the rows has applied the relevance ` +
         `rule to the top row you could install: \`Ask the user:\` (relevance >= ${RELEVANCE_BANDS.ask.toFixed(1)}) — put that ` +
-        `question to the user before anything else; \`Borderline match\` — judge whether it fits, then ask; ` +
+        `question to the user before anything else; \`Borderline match\` — judge whether it fits, then ask first; ` +
         `\`Weak matches only\` (under ${RELEVANCE_BANDS.judge.toFixed(1)}) — solve the task yourself.\n` +
         askable.map((x) => line(x.r, x.rel, x.v.decision, x.v.reason)).join("\n") +
         // The question first, then the command that is only valid once it has

@@ -77,44 +77,67 @@ import { metaskillCmd } from "./paths.js";
 //     install path cannot be talked past (a `deny` there survives every flag),
 //     but nothing stops a model running the skills CLI directly — there is no
 //     PreToolUse hook, so the ban on doing so is instruction, not enforcement.
+//   - Asking is defined once, above the bands, and both asking bands inherit
+//     it: an ask happens BEFORE the task, and it is a question the user is
+//     given a turn to answer. Second real v2 use: a borderline row at 0.85,
+//     correctly judged to fit, and the question printed as the last line of a
+//     paragraph that had already begun answering the task — the user did not
+//     experience it as a question at all. Two gaps in this text, not model
+//     whim. Only the >= 1.0 band said "before anything else"; the borderline
+//     band said "judge, then ask", which is satisfied by asking at the end of
+//     an answer, so it now says "then ask first" (and find.ts's own cue says
+//     the same, or the two disagree in the decision turn). And nothing said
+//     HOW: Claude Code hands the model an AskUserQuestion tool that renders a
+//     real yes/no choice, and it used prose instead. The instruction is
+//     conditional because the tool is — it exists in an interactive session,
+//     not in every harness — and the fallback names the property that failed:
+//     one line of text and NOTHING else in that turn.
 //   - `Registry did not answer` is listed separately from `No skills found`.
 //     A live lookup that timed out is not evidence that no skill exists, and a
 //     model given one label for both facts will report a coverage gap it never
 //     established.
 //
 // Budget: the PROSE stays under 1400 chars (test/protocol.test.ts measures it
-// with both absolute paths removed). The paths are not something the wording
-// can trade against — process.execPath is 86 chars on the author's machine and
-// cliEntryPath() is longer for a plugin-cache install than in this checkout.
+// with both absolute paths removed), and the injected string under 1600. The
+// paths are not something the wording can trade against — process.execPath is
+// 86 chars on the author's machine and cliEntryPath() is longer for a
+// plugin-cache install than in this checkout. Everything above is paid for:
+// the ask-first paragraph was bought back out of the language sentence, the
+// skill-kind enumeration and the tail of each branch bullet, so nothing here
+// is spare. Anything added later has to be traded the same way.
 export function protocolText(): string {
   return [
     "[metaskill] Standing protocol — in force for every task this session.",
     "",
     "At the start of every task, before you begin work, run:",
     "",
-    `  ${metaskillCmd()} find "<2-4 words for the capability>"`,
+    `  ${metaskillCmd()} find "<2-4 capability words>"`,
     "",
     "Run it before answering, not after.",
-    "Run it even when you are sure no skill is needed — that check is its job.",
-    "Once per task, not once per session; pure conversation is exempt.",
+    "Run it even when you are sure; that check is its job.",
+    "Once per task, not per session; pure chat is exempt.",
     "",
-    "It never installs. Nothing reaches disk without the user's explicit yes",
-    "— unless they set `trust.auto_install: true`.",
+    "It never installs: nothing reaches disk without the user's explicit yes,",
+    "unless they set `trust.auto_install: true`.",
     "",
-    "The user's prompt may be in any language; the query is always English,",
-    "derived from the task, not translated. Name the artefact or domain, not",
-    "the action: a format, framework, platform API, or a craft like SEO.",
+    "The prompt may be in any language; the query is always English, from the",
+    "task. Name the artefact or domain, not the action: a format, framework,",
+    "or craft like SEO.",
+    "",
+    "Ask FIRST: before you start the task, not inside an answer. Use the",
+    "AskUserQuestion tool if you have it (`Install <pkg>` / `No`), else one",
+    "line of text and nothing else.",
     "",
     "Act on what it prints:",
-    "- `Already present:` — read that SKILL.md and follow it.",
-    "- `Top matches` — the line under the rows says what to do with the row it",
-    "  names: `Ask the user:` (`relevance` >= 1.0) — put that question to the",
-    "  user before anything else; `Borderline match` — judge, then ask;",
-    "  `Weak matches only` (under 0.5) — a low `relevance`: it barely matched,",
-    "  so decline it in silence.",
-    "- `live search found` — no relevance to weigh; relay its printed question.",
-    "- `Refused by policy` — no flag installs these. Never offer them.",
-    "- `Registry did not answer` — not a miss. Retry once, or solve it.",
-    "- `No skills found` — solve it yourself; say nothing about metaskill.",
+    "- `Already present:` — read that SKILL.md, follow it.",
+    "- `Top matches` — the line under the rows decides: `Ask the user:`",
+    "  (`relevance` >= 1.0) — put it to the user before anything else;",
+    "  `Borderline match` — judge whether it fits, then ask first;",
+    "  `Weak matches only` (under 0.5) — a low `relevance`: it barely",
+    "  matched, so decline it in silence.",
+    "- `live search found` — no band: relay its question.",
+    "- `Refused by policy` — never offer these; no flag installs them.",
+    "- `Registry did not answer` — not a miss; retry once.",
+    "- `No skills found` — solve it yourself, silently.",
   ].join("\n");
 }

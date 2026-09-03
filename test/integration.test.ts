@@ -487,15 +487,19 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     const rel = topRelevance(r.stdout, "someorg/repo@snorklex");
     expect(rel).toBeGreaterThanOrEqual(0.5);
     expect(rel).toBeLessThan(1);
-    // The point of the band: no ready-made question to relay without thinking.
+    // The point of the band: no ready-made question to relay without
+    // thinking — but the ordering is not left open either. "before asking"
+    // was satisfied by a model that judged the row to fit and then asked at
+    // the end of an answer it had already given (0.85, second real v2 use),
+    // so the cue names when: first.
     expect(verdictLines(r.stdout)).toEqual([
-      "Borderline match (relevance 0.53) — judge whether someorg/repo@snorklex fits before asking.",
+      "Borderline match (relevance 0.53) — judge whether someorg/repo@snorklex fits, then ask first.",
     ]);
     // ...and the row is still printed, with its number. Bands gate the
     // action, never the list.
     expect(r.stdout).toContain("someorg/repo@snorklex (42 installs, scan=clean, relevance=0.53)");
-    // The install line stays in this band — the cue ends in "then ask" — and
-    // names the same package the cue does.
+    // The install line stays in this band — the cue ends in "then ask first"
+    // — and names the same package the cue does.
     expect(r.stdout).toContain(
       `Install only on the user's explicit yes: "${process.execPath}" "${CLI}" install someorg/repo@snorklex --force`,
     );

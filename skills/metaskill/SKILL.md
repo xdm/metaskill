@@ -29,17 +29,14 @@ every task, before you begin work, derive a 2-4 word English capability phrase
 from the task ("reddit automation", "invoice ocr") and run that command via
 Bash. Run it even when you are sure no skill is needed — checking that is its
 job. Once per task, not once per session; only pure conversation is exempt.
-The user's prompt may be in any language; the query is always English, and you
-derive it from the task rather than translating the prompt.
+The prompt may be in any language; the query is always English, from the task.
 
 `find` ranks and vets; it **never installs**. It prints the top candidates
 with their install count, scan verdict, relevance and policy decision, and
-stops there — the division of labour is that code ranks and applies the rule
-below, you relay the line it prints, and the `install` subcommand enforces
-the policy on the package that line names. Nothing reaches
+stops there — code ranks and applies the rule below, you relay the line it
+prints, and `install` enforces policy on the package it names. Nothing reaches
 disk without the user's explicit yes, unless they have opted in by setting
-`trust.auto_install: true` in `~/.metaskill/metaskill.yaml` (off by default,
-and even then it is `install` that acts, never `find`).
+`trust.auto_install: true` in `~/.metaskill/metaskill.yaml` (off by default).
 
 `relevance` is BM25's report of how much of your query a row matched, on a
 scale that means the same thing whatever index is loaded. A full match sits
@@ -51,15 +48,18 @@ a rule, not a call you make. `find` applies it for you: under the rows it
 prints exactly one line, about the top row you could still install.
 
 - **`Ask the user: Install ... ? yes/no`** (`relevance` >= 1.0) — put that
-  question to the user, before anything else. Not after you have started the
-  task, not bundled into a longer answer, and not left unasked because you
-  could do the task yourself. You almost always could; that is not what the
+  question to the user, before anything else. Not left unasked because you
+  could do the task yourself: you almost always could; that is not what the
   question is for. The line already names the package, its install count, its
   publisher and its scan verdict, so relay it as printed.
 - **`Borderline match`** (`relevance` >= 0.5) — judge whether that row really
-  fits the task, and ask only if it does.
+  fits the task; if it does, ask about it the same way, first.
 - **`Weak matches only`** (under 0.5) — decline and say nothing. The row
   shares a word with your query and little else.
+
+Asking means asking before you start the task, not inside an answer you have
+already begun: use the `AskUserQuestion` tool if you have it (options
+`Install <pkg>` / `No`), else send one line of text and nothing else.
 
 A **`live search found`** hit is different: the registry returns no relevance,
 so there is no band to apply, and with no scan verdict it is always `ask`. It

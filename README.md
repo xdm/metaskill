@@ -63,7 +63,7 @@ Between pressing Enter and Claude's first token:
    each one past the trust policy:
 
 ```
-[metaskill] Top matches for "xlsx export formulas" — find does not install. The line under the rows has applied the relevance rule to the top row you could install: `Ask the user:` (relevance >= 1.0) — put that question to the user before anything else; `Borderline match` — judge whether it fits, then ask; `Weak matches only` (under 0.5) — solve the task yourself.
+[metaskill] Top matches for "xlsx export formulas" — find does not install. The line under the rows has applied the relevance rule to the top row you could install: `Ask the user:` (relevance >= 1.0) — put that question to the user before anything else; `Borderline match` — judge whether it fits, then ask first; `Weak matches only` (under 0.5) — solve the task yourself.
   aiskillstore/marketplace@xlsx (237 installs, scan=unknown, relevance=1.12) [ask: needs your yes — publisher aiskillstore not allowlisted]
     Spreadsheet toolkit (.xlsx/.csv). Create/edit with formulas/formatting, analyze data, visualization, recalculate formulas, for spreadsheet p
   davila7/claude-code-templates@xlsx (949 installs, scan=clean, relevance=1.12) [ask: needs your yes — publisher davila7 not allowlisted]

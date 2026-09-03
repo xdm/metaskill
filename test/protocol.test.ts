@@ -153,6 +153,33 @@ describe("protocolText", () => {
     expect(t).not.toMatch(/if none does, solve it yourself/i);
   });
 
+  it("puts the ask before any task work, in BOTH asking bands", () => {
+    // Second real v2 use: a borderline row at 0.85, judged to fit, and the
+    // question arrived as the last line of a paragraph that had already
+    // started answering the task — so the user never experienced it as a
+    // question. The band text was the reason: only `>= 1.0` said "before
+    // anything else"; `Borderline match` said "judge, then ask", which is
+    // satisfied by asking at the end of an answer.
+    const t = flat();
+    expect(t).toMatch(/before (you )?(start|begin|do) (the task|anything)/i);
+    expect(t).toMatch(/not inside an answer/i);
+    expect(t).toMatch(/`Borderline match` — judge whether it fits, then ask first/);
+    expect(t).not.toMatch(/`Borderline match` — judge, then ask;/);
+  });
+
+  it("names the AskUserQuestion tool as the way to ask, with a text fallback", () => {
+    // The model had a tool that renders a real yes/no choice and used prose
+    // instead, because nothing told it to. The instruction has to stay
+    // conditional — AskUserQuestion exists in an interactive Claude Code
+    // session, not in every harness — and the fallback has to be a message
+    // that is nothing but the question, which is the property that failed.
+    const t = flat();
+    expect(t).toMatch(/AskUserQuestion/);
+    expect(t).toMatch(/if you have it/i);
+    expect(t).toContain("`Install <pkg>` / `No`");
+    expect(t).toMatch(/one line of text and nothing else/i);
+  });
+
   it("quotes the same two numbers find.ts bands on", () => {
     // The bands are enforced in code (read.ts's RELEVANCE_BANDS, applied by
     // find.ts) and described here. Two copies of a number drift; this fails
@@ -258,6 +285,18 @@ describe("skills/metaskill/SKILL.md", () => {
     for (const gone of ["Installed now:", "Install timed out", "Install failed"]) {
       expect(SKILL_MD, `SKILL.md must not name "${gone}"`).not.toContain(gone);
     }
+  });
+
+  it("states the same ask-first rule and the same way of asking as the block", () => {
+    // The two documents disagreeing about WHEN and HOW to ask is the same
+    // defect as either of them being silent: the model reads whichever it
+    // has. Both phrases, in both places.
+    for (const re of [/before you start the task/i, /AskUserQuestion/, /not inside an answer/i]) {
+      expect(flatMd, `SKILL.md matches ${re}`).toMatch(re);
+      expect(protocolText().replace(/\s+/g, " "), `protocol matches ${re}`).toMatch(re);
+    }
+    // The borderline band asks too, and asks first — not "only if it does".
+    expect(flatMd).toMatch(/`Borderline match`.{0,140}\bfirst\b/);
   });
 
   it("covers every branch the protocol block covers", () => {
