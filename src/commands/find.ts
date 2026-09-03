@@ -54,6 +54,14 @@ function alreadyPresent(q: string, installed: InstalledSkill[]): InstalledSkill 
   return matched ? installed.find((s) => s.name === matched.skill) : undefined;
 }
 
+// Shared by the row and the question printed under it, so the two can never
+// disagree about a count the user is being asked to weigh. `~N est` is a
+// prior guessed from sibling skills; dropped, it would reach the user as a
+// fact.
+function installsLabel(r: IndexRecord): string {
+  return r.installs === null ? `~${r.installsPrior ?? 0} est` : String(r.installs);
+}
+
 // `relevance` is printed because the model, not the code, now picks which row
 // (if any) answers the task. BM25 cannot judge whether "say hello" is really
 // about a greeting skill; it only reports how much of the query the row
@@ -61,9 +69,32 @@ function alreadyPresent(q: string, installed: InstalledSkill[]): InstalledSkill 
 // index sizes. A reader who sees every row at 0.4 has been told what a
 // hard-coded floor used to decide for them, and can still see the rows.
 function line(r: IndexRecord, relevance: number, decision: string, reason: string): string {
-  const installs = r.installs === null ? `~${r.installsPrior ?? 0} est` : String(r.installs);
   const desc = (r.description ?? "").replace(/\s+/g, " ").slice(0, 140);
-  return `  ${r.pkg} (${installs} installs, scan=${r.scan}, relevance=${relevance.toFixed(2)}) [${decision}: ${reason}]\n    ${desc}`;
+  return `  ${r.pkg} (${installsLabel(r)} installs, scan=${r.scan}, relevance=${relevance.toFixed(2)}) [${decision}: ${reason}]\n    ${desc}`;
+}
+
+// The question, written out, for the top row the user could still say yes to.
+//
+// The block used to end at the rows and the install command, which left the
+// model to compose the question itself — and on the first real v2 lookup it
+// composed nothing: five `ask` rows, a plainly fitting top row at relevance
+// 1.16, and no question asked. Asking costs a turn and the output handed it
+// nothing ready to say, so the cheapest reading of the rows ("judge whether
+// one fits") won. Handing over the finished sentence is the same move that
+// made the install command work: the model relays a string instead of
+// deciding how to phrase one.
+//
+// The three facts in it are the ones SKILL.md has always required of the
+// question — package, install count, publisher — plus the scan verdict,
+// because a row's `ask` usually rests on one of those two numbers and the
+// user answering deserves to see what it rests on. They are this record's own
+// values, in the row's own format: a question quoting a number the row above
+// it does not show is a question the user cannot check.
+function questionLine(r: IndexRecord): string {
+  return (
+    `Ask the user: Install ${r.pkg} (${installsLabel(r)} installs, ` +
+    `publisher ${publisherOf(r.pkg)}, scan ${r.scan}) for this task? yes/no`
+  );
 }
 
 // find is invoked directly by the in-session model via Bash, with no human
@@ -203,10 +234,13 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       return { r: h.record, rel: h.relevance, v, scan };
     });
 
-    // One DiscoveredLogItem per row, in `rows`' own order (search()'s rank
-    // order — the order every row here was already built in, ask and deny
-    // alike). `scan` reuses scanResultFromIndex's status rather than
-    // re-deriving the unknown -> unavailable mapping a second time.
+    // One DiscoveredLogItem per row, in STDOUT order — askable rows in rank
+    // order, then the refused block — not in search()'s rank order. The two
+    // differ whenever a denied row outranks an askable one, and the log is
+    // read by a human lining it up against what they just saw on screen; rank
+    // order would hand them a sequence that appeared nowhere. `scan` reuses
+    // scanResultFromIndex's status rather than re-deriving the unknown ->
+    // unavailable mapping a second time.
     const toDiscovered = (x: (typeof rows)[number]): DiscoveredLogItem => ({
       pkg: x.r.pkg,
       installs: x.r.installs ?? x.r.installsPrior ?? 0,
@@ -234,19 +268,28 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       process.stdout.write(
         `[metaskill] No skills found for "${q}". Solve the task without one.\n${deniedBlock}${pluginLine}`,
       );
-      logFind([], rows.map(toDiscovered));
+      logFind([], [...askable, ...denied].map(toDiscovered)); // askable is empty here: stdout order is the refused block
       return 0;
     }
+    // The first row whose decision is `ask` — not simply `rows[0]`. A denied
+    // row can outrank every askable one, and suppressing the question on that
+    // account would refuse to ask about a package policy is willing to
+    // install because a different package is not. An `auto` row above it (the
+    // knob is on) needs no question by definition, so it does not get one.
+    const topAsk = askable.find((x) => x.v.decision === "ask");
+    const question = topAsk ? `${questionLine(topAsk.r)}\n` : "";
     process.stdout.write(
       `[metaskill] Top matches for "${q}" — find does not install. Judge whether one of these actually fits the task; ` +
         `if none does, solve it yourself. Before installing any, ask the user ONE question:\n` +
         askable.map((x) => line(x.r, x.rel, x.v.decision, x.v.reason)).join("\n") +
-        // --matched carries this exact (already-normalised) query into the
-        // lock on a confirmed install, so a repeat of it short-circuits here
-        // next time via alreadyPresent's lock check above — see install.ts.
-        `\nInstall only on the user's explicit yes: ${metaskillCmd()} install <pkg> --force --matched "${q}"\n${deniedBlock}${pluginLine}`,
+        // The question first, then the command that is only valid once it has
+        // been answered. --matched carries this exact (already-normalised)
+        // query into the lock on a confirmed install, so a repeat of it
+        // short-circuits here next time via alreadyPresent's lock check above
+        // — see install.ts.
+        `\n${question}Install only on the user's explicit yes: ${metaskillCmd()} install <pkg> --force --matched "${q}"\n${deniedBlock}${pluginLine}`,
     );
-    logFind([], rows.map(toDiscovered));
+    logFind([], [...askable, ...denied].map(toDiscovered));
     return 0;
   } catch (err) {
     process.stderr.write(`[metaskill] find error: ${(err as Error).message}\n`);

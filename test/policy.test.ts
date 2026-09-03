@@ -203,6 +203,59 @@ describe("policy.decide: the trust.auto_install gate", () => {
     const v = decide(cand("stranger", 10), clean, defaultPolicy());
     expect(v.decision).toBe("ask");
     expect(v.reason).not.toMatch(/auto-install is off/);
+    // ...bar the four words every ask now opens with; see the describe below.
+    expect(v.reason).toContain("publisher stranger not allowlisted");
+  });
+});
+
+// First real v2 use: `find "linkedin post copywriting"` printed five ask rows
+// with a plainly fitting top row and the model asked nothing. One of the three
+// causes was this string. `[ask: publisher kostja94 not allowlisted]` states a
+// fact ABOUT THE PACKAGE, and a reader looking for what to do next reads it as
+// a verdict against it — the row was scored, found wanting, move on. `ask` is
+// not a finding, it is an instruction to the reader: the reason opens with the
+// action and lets the fact it rests on follow.
+describe("policy.decide: every ask reason opens with the action", () => {
+  const p = tablePolicy();
+  const advisory: ScanResult = { status: "clean", findings: [], advisories: ['"curl " found in SKILL.md'] };
+  const estimated: Candidate = { ...cand("someone", 999999), estimated: true };
+
+  // One case per `ask` branch of the table, plus the gate's downgrade. A
+  // branch added later that forgets the prefix has to get past the single
+  // exit in decide(), which is the point of prefixing there and not per row.
+  const asks: Array<[string, ReturnType<typeof decide>]> = [
+    ["not allowlisted", decide(cand("stranger", 10), clean, p)],
+    ["below threshold with no scan", decide(cand("stranger", 10), skipped, p)],
+    ["scan unavailable above threshold", decide(cand("stranger", 1_000_000), unavailable, p)],
+    ["estimated installs", decide(estimated, clean, p)],
+    ["scan advisory", decide(cand("anthropics", 999999), advisory, p)],
+    ["allowlisted but unscanned", decide(cand("anthropics", 0), skipped, p)],
+    ["auto-install off (the default)", decide(cand("anthropics", 500000), clean, defaultPolicy())],
+  ];
+
+  for (const [label, v] of asks) {
+    it(`reads as an instruction: ${label}`, () => {
+      expect(v.decision).toBe("ask");
+      expect(v.reason.startsWith("needs your yes — "), `reason was: ${v.reason}`).toBe(true);
+      // The fact survives the prefix; it is not replaced by it.
+      expect(v.reason.length).toBeGreaterThan("needs your yes — ".length);
+    });
+  }
+
+  it("says it once, not twice, when the knob downgrades an auto", () => {
+    // The downgrade wraps a computed verdict's reason. Prefixing before that
+    // wrap, or at both exits, would produce `needs your yes — auto-install is
+    // off; needs your yes — ...`.
+    const v = decide(cand("anthropics", 500000), clean, defaultPolicy());
+    expect(v.reason).toBe("needs your yes — auto-install is off; publisher anthropics is allowlisted, scan clean");
+  });
+
+  it("leaves deny alone — nothing about a denied package needs the user's yes", () => {
+    // A `deny` wearing "needs your yes" would invite exactly the question
+    // that no flag can act on.
+    const v = decide(cand("anthropics", 500000), dirty, p);
+    expect(v.decision).toBe("deny");
+    expect(v.reason).not.toContain("needs your yes");
   });
 });
 

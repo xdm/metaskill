@@ -27,6 +27,21 @@ import { metaskillCmd } from "./paths.js";
 //     picks, `install` enforces policy (spec §4.4) — so the ask-the-user rule
 //     is now true of the command as a whole, and saying so is what stops a
 //     model reporting an install that never happened.
+//   - It states WHEN to ask as a rule with numbers in it, not as a judgement.
+//     "Judge which row, if any, fits the task; if none does, solve it
+//     yourself" is a slot the model fills with its own prior, and on the
+//     first real v2 lookup it filled it with "none": five `ask` rows, a
+//     1.16-relevance top row that plainly fitted, and nothing put to the
+//     user. A reader asked to decide whether to ask has already been handed
+//     the option not to. The bands come from the measured distributions in
+//     read.ts's Hit comment — capability phrases: min 0.85, median 1.28;
+//     junk queries: median 0.70, max 1.30. They overlap, which is why no
+//     floor can gate the command; but 1.0 sits above the junk median and
+//     below the capability median, so "at or above 1.0, ask" fires on nearly
+//     every real phrase and rarely on junk, and 0.5 sits under both
+//     distributions, where a row shares a word with the query and nothing
+//     more. The numbers live here, not in the injected text: the text says
+//     what to do, and the reader cannot check a distribution anyway.
 //   - It says what a low `relevance` means and what to do about it. Removing
 //     the hard floor made the model's judgement the only filter, and `find`
 //     prints a number the model has never been told how to read — beside a
@@ -75,16 +90,15 @@ export function protocolText(): string {
     "",
     "The user's prompt may be in any language; the query is always English,",
     "derived from the task rather than translated. Name the artefact or domain,",
-    "not the action: a file format, framework, database, platform API, or a",
-    "documented craft like SEO or copywriting.",
+    "not the action: a file format, framework, platform API, or a craft like",
+    "SEO or copywriting.",
     "",
     "Act on what it prints:",
     "- `Already present:` — read that SKILL.md and follow it.",
-    "- `Top matches` / `live search found` — judge which row, if any, fits the",
-    "  task; a low `relevance` means it barely matched the words — decline it.",
-    "  Otherwise ask the user ONE question naming the package, its install count",
-    "  and its publisher; install only on an explicit yes, with the command it",
-    "  prints.",
+    "- `Top matches` / `live search found` — top row `relevance` >= 1.0: put its",
+    "  printed `Ask the user:` question to the user before anything else. Under",
+    "  0.5, a low `relevance` means it barely matched — decline it, silently. In",
+    "  between, judge. Install only on an explicit yes, with the command printed.",
     "- `Refused by policy` — no flag installs these. Never offer them.",
     "- `Registry did not answer` — not a miss. Retry once, or solve it.",
     "- `No skills found` — solve the task yourself, and say nothing about metaskill.",

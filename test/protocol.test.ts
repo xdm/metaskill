@@ -68,6 +68,10 @@ describe("protocolText", () => {
       "live search found",
       "Refused by policy",
       "No skills found",
+      // The line find.ts now prints for the top askable row. The block tells
+      // the model to relay it verbatim, so the label has to be the one that
+      // actually appears on screen.
+      "Ask the user:",
       // A timed-out live lookup and a registry that answered "nothing" are
       // different facts. One label for both would have the model report a
       // coverage gap it never established.
@@ -128,6 +132,22 @@ describe("protocolText", () => {
     expect(t).toMatch(/decline it/i);
   });
 
+  it("states when to ask as a rule with numbers, not as a judgement call", () => {
+    // The judgement it replaces — "judge which row, if any, fits the task; if
+    // none does, solve it yourself" — is a slot the model fills with its own
+    // prior, and on first real use it filled it with "none": five ask rows, a
+    // 1.16-relevance top row that plainly fitted, and no question asked. A
+    // reader who has to decide whether to ask has already been given the
+    // option not to. Bands, not discretion: the numbers come from the
+    // measured distributions (see src/protocol.ts).
+    const t = flat();
+    expect(t).toMatch(/`relevance` >= 1\.0/);
+    expect(t).toMatch(/before anything else/i);
+    expect(t).toMatch(/0\.5/);
+    expect(t).not.toMatch(/judge which row/i);
+    expect(t).not.toMatch(/if none does, solve it yourself/i);
+  });
+
   it("says what to name when no capability phrase is obvious, without gating on it", () => {
     // "fix this failing test" names no capability, so without this the dodge
     // simply moves from "I've got this" to "I cannot form a query".
@@ -182,10 +202,23 @@ describe("skills/metaskill/SKILL.md", () => {
       "Refused by policy",
       "Registry did not answer",
       "No skills found",
+      "Ask the user:",
     ]) {
       expect(SKILL_MD, `SKILL.md names "${label}"`).toContain(label);
       expect(FIND_SRC, `find.ts prints "${label}"`).toContain(label);
     }
+  });
+
+  it("states the same ask rule, with the same numbers, as the protocol block", () => {
+    // Two documents, one contract — and this is the rule that decides whether
+    // the user is ever asked at all. A SKILL.md that still says "decide which
+    // row, if any, actually fits" hands the judgement back to a model that
+    // reads it instead of the block.
+    for (const re of [/`relevance` >= 1\.0/, /before anything else/i, /0\.5/]) {
+      expect(flatMd, `SKILL.md matches ${re}`).toMatch(re);
+      expect(protocolText().replace(/\s+/g, " "), `protocol matches ${re}`).toMatch(re);
+    }
+    expect(flatMd).not.toMatch(/decide which row/i);
   });
 
   it("names no outcome find can no longer reach", () => {

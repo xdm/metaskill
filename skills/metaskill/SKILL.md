@@ -50,14 +50,27 @@ scale that means the same thing whatever index is loaded. A full match sits
 around 1.0 or above; a low `relevance` means the row barely matched the words
 — decline it. It is a signal for your judgement, not a verdict: a row can
 rank first, carry a reassuring policy reason, and still have nothing to do
-with the task. If none of them fits, say so and solve the task yourself.
+with the task.
+
+So the top row's number decides whether the user hears about it at all, and
+it is a rule, not a call you make:
+
+- **`relevance` >= 1.0** — put the printed `Ask the user:` question to the
+  user, before anything else. Not after you have started the task, not
+  bundled into a longer answer, and not silently skipped because you could
+  do the task yourself. You almost always could; that is not what the
+  question is for.
+- **under 0.5** — decline it and say nothing. The row shares a word with your
+  query and little else.
+- **in between** — judge it, and ask if it fits.
 
 Act on what it prints:
 
 - **`Already present:`** — read that SKILL.md and follow it.
-- **`Top matches for ...`** / **`live search found ...`** — decide which row,
-  if any, actually fits the task. Then ask the user ONE question naming the
-  package, its install count and its publisher, and install only on an
+- **`Top matches for ...`** / **`live search found ...`** — apply the rule
+  above. `find` prints the question ready to relay (`Ask the user: Install
+  <pkg> (...) for this task? yes/no`) — it already names the package, its
+  install count, its publisher and its scan verdict. Install only on an
   explicit yes, using the command that line prints.
 - **`Refused by policy`** — those packages are not installable by any flag.
   Never offer them; do not ask about them.

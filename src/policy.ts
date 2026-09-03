@@ -74,10 +74,22 @@ export function decide(c: Candidate, scan: ScanResult, p: Policy): PolicyDecisio
   //
   // `deny` is untouched on purpose: this knob lowers what may happen
   // unattended, it never raises anything.
-  if (verdict.decision === "auto" && !p.trust.autoInstall) {
-    return { decision: "ask", reason: `auto-install is off; ${verdict.reason}` };
-  }
-  return verdict;
+  const gated: PolicyDecision =
+    verdict.decision === "auto" && !p.trust.autoInstall
+      ? { decision: "ask", reason: `auto-install is off; ${verdict.reason}` }
+      : verdict;
+
+  // Every `ask` leaves here wearing the same four words, for the same reason
+  // the gate above has one exit. The table states facts about the package
+  // ("publisher kostja94 not allowlisted"), and rendered in a row as
+  // `[ask: publisher kostja94 not allowlisted]` a fact about the package
+  // reads as a verdict AGAINST it — scored, found wanting, move on. That is
+  // how the first real v2 lookup ended: five ask rows, a top row that plainly
+  // fitted, and no question put to anyone. `ask` is not a finding, it is an
+  // instruction to whoever is reading — so the reason opens with the action
+  // and lets the fact it rests on follow. `deny` keeps the plain fact: there
+  // is no action to name, and no flag can act on one.
+  return gated.decision === "ask" ? { decision: "ask", reason: `needs your yes — ${gated.reason}` } : gated;
 }
 
 // Spec 4.5 decision table, in order: deny_skills / deny_publishers -> deny;

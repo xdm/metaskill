@@ -64,17 +64,18 @@ Between pressing Enter and Claude's first token:
 
 ```
 [metaskill] Top matches for "xlsx export formulas" — find does not install. Judge whether one of these actually fits the task; if none does, solve it yourself. Before installing any, ask the user ONE question:
-  aiskillstore/marketplace@xlsx (237 installs, scan=unknown, relevance=1.12) [ask: publisher aiskillstore not allowlisted]
+  aiskillstore/marketplace@xlsx (237 installs, scan=unknown, relevance=1.12) [ask: needs your yes — publisher aiskillstore not allowlisted]
     Spreadsheet toolkit (.xlsx/.csv). Create/edit with formulas/formatting, analyze data, visualization, recalculate formulas, for spreadsheet p
-  davila7/claude-code-templates@xlsx (949 installs, scan=clean, relevance=1.12) [ask: publisher davila7 not allowlisted]
+  davila7/claude-code-templates@xlsx (949 installs, scan=clean, relevance=1.12) [ask: needs your yes — publisher davila7 not allowlisted]
     Spreadsheet toolkit (.xlsx/.csv). Create/edit with formulas/formatting, analyze data, visualization, recalculate formulas, for spreadsheet p
-  aaaaqwq/agi-super-team@xlsx (~0 est installs, scan=clean, relevance=0.94) [ask: no real install count (0 estimated from siblings)]
+  aaaaqwq/agi-super-team@xlsx (~0 est installs, scan=clean, relevance=0.94) [ask: needs your yes — no real install count (0 estimated from siblings)]
     Comprehensive spreadsheet creation, editing, and analysis with support for formulas, formatting, data analysis, and visualization. When Clau
-  ailabs-393/ai-labs-claude-skills@xlsx (876 installs, scan=clean, relevance=0.94) [ask: publisher ailabs-393 not allowlisted]
+  ailabs-393/ai-labs-claude-skills@xlsx (876 installs, scan=clean, relevance=0.94) [ask: needs your yes — publisher ailabs-393 not allowlisted]
     Comprehensive spreadsheet creation, editing, and analysis with support for formulas, formatting, data analysis, and visualization. When Clau
-  anthropics/claude-agent-sdk-demos@xlsx (159 installs, scan=clean, relevance=0.94) [ask: auto-install is off; publisher anthropics is allowlisted, scan clean]
+  anthropics/claude-agent-sdk-demos@xlsx (159 installs, scan=clean, relevance=0.94) [ask: needs your yes — auto-install is off; publisher anthropics is allowlisted, scan clean]
     Comprehensive spreadsheet creation, editing, and analysis with support for formulas, formatting, data analysis, and visualization. When Clau
-Install only on the user's explicit yes: "/Users/you/.nvm/versions/node/v24.17.0/bin/node" "/Users/you/.metaskill/bin/dist/cli.js" install <pkg> --force
+Ask the user: Install aiskillstore/marketplace@xlsx (237 installs, publisher aiskillstore, scan unknown) for this task? yes/no
+Install only on the user's explicit yes: "/Users/you/.nvm/versions/node/v24.17.0/bin/node" "/Users/you/.metaskill/bin/dist/cli.js" install <pkg> --force --matched "xlsx export formulas"
 ```
 
 4. **`find` installs nothing. It ranks, vets, and stops.** Each row carries
@@ -86,10 +87,12 @@ Install only on the user's explicit yes: "/Users/you/.nvm/versions/node/v24.17.0
    here. The last row is allowlisted with a clean scan, and reads
    `auto-install is off` because that is the shipped default: the verdict is
    computed in full, then held for your yes.
-5. So Claude picks the row that fits, asks you one question — naming the
-   package, its publisher and its install count — and installs only on an
-   explicit yes, with the command that line printed. If nothing on the list
-   fits, it says so and solves the task itself.
+5. So Claude picks the row that fits and puts the question to you — already
+   written out, naming the package, its publisher, its install count and its
+   scan verdict, because a question Claude has to compose is a question it
+   talks itself out of asking. It installs only on an explicit yes, with the
+   command that line printed. If nothing on the list fits, it says so and
+   solves the task itself.
 
 A local index hit like this is one fast subprocess call; installing a skill —
 or, on an index miss, the one live registry search, capped at 4 seconds — is
@@ -126,9 +129,10 @@ The decision table, in order, first match wins:
 
 Then one rule over the whole table: while `trust.auto_install` is `false` —
 the shipped default — every **auto-install** above is downgraded to **ask**,
-carrying its original reason with it (`ask: auto-install is off; publisher
-anthropics is allowlisted, scan clean`). Nothing new lands on your disk
-without you saying yes, whatever the policy would otherwise permit. Set
+carrying its original reason with it (`ask: needs your yes — auto-install is
+off; publisher anthropics is allowlisted, scan clean`) behind the four words
+every `ask` opens with. Nothing new lands on your disk without you saying
+yes, whatever the policy would otherwise permit. Set
 `auto_install: true` when you want the automatic path back; `deny` is
 untouched either way, because that switch only ever lowers what may happen
 unattended.
@@ -389,7 +393,7 @@ parked for the next session).
 
 ```
 npm install
-npm test          # build + 214 unit/integration tests (stubbed skills CLI, temp HOME)
+npm test          # build + 241 unit/integration tests (stubbed skills CLI, temp HOME)
 ```
 
 The registry index (`index.json`) is built separately from the CLI and is not

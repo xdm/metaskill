@@ -185,7 +185,7 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     const r = await runCli(["find", "widgetzzz", "--index", idx], { home });
     expect(r.code).toBe(0);
     expect(r.stdout).toContain("acme/tools@widgetzzz");
-    expect(r.stdout).toContain("[ask: publisher acme not allowlisted]");
+    expect(r.stdout).toContain("[ask: needs your yes — publisher acme not allowlisted]");
     fs.rmSync(home, { recursive: true, force: true });
   });
 
@@ -257,7 +257,7 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     expect(r.stdout).toContain("anthropics/skills@gizmo (999999 installs, scan=clean, relevance=");
     // The verdict is still computed and still shown — the knob downgrades it
     // to a question, it does not hide why the package would have qualified.
-    expect(r.stdout).toContain("[ask: auto-install is off; publisher anthropics is allowlisted, scan clean]");
+    expect(r.stdout).toContain("[ask: needs your yes — auto-install is off; publisher anthropics is allowlisted, scan clean]");
     expect(r.stdout).toContain(
       `Install only on the user's explicit yes: "${process.execPath}" "${CLI}" install <pkg> --force`,
     );
@@ -314,7 +314,7 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
 
     const refused = await runCli(["install", "anthropics/skills@gizmo"], { home });
     expect(refused.code).toBe(1);
-    expect(refused.stderr).toContain("Needs confirmation (auto-install is off;");
+    expect(refused.stderr).toContain("Needs confirmation (needs your yes — auto-install is off;");
     expect(refused.stderr).toContain("publisher anthropics is allowlisted, scan clean");
     expect(stubCalls(home).filter((c) => c[0] === "add")).toEqual([]);
     expect(readLockFile(home)).toEqual({});
@@ -369,6 +369,63 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     expect(r.stdout).toMatch(/relevance=\d\.\d\d\)/);
     expect(r.stdout).toContain(
       `Install only on the user's explicit yes: "${process.execPath}" "${CLI}" install <pkg> --force`,
+    );
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  // The ask that never happened. First real v2 use printed five `ask` rows
+  // with a plainly fitting top row (relevance 1.16) and the model asked
+  // nothing: asking costs a turn, and the block handed it nothing ready to
+  // say. So `find` writes the question out, with the three facts the user
+  // needs in order to answer it, and the model's job shrinks to relaying it.
+  it("find prints a ready-made question for an ask-tier top row", async () => {
+    const home = freshHome("find-question");
+    const idx = writeIndex(home, [
+      rec({ name: "linkedin-posts", source: "kostja94/marketing-skills",
+            pkg: "kostja94/marketing-skills@linkedin-posts",
+            description: "Linkedin post copywriting: write a linkedin post, linkedin copywriting for the linkedin post feed.",
+            installs: 312 }),
+      rec({ name: "widget-press", source: "acme/tools", pkg: "acme/tools@widget-press",
+            description: "Press widgets into shape.", installs: 20 }),
+    ]);
+    const r = await runCli(["find", "linkedin post copywriting", "--index", idx], { home });
+    expect(r.code).toBe(0);
+    const question = r.stdout.split("\n").find((l) => l.startsWith("Ask the user: Install "));
+    expect(question).toBe(
+      "Ask the user: Install kostja94/marketing-skills@linkedin-posts " +
+        "(312 installs, publisher kostja94, scan clean) for this task? yes/no",
+    );
+    // Before the command it is the precondition for, never after it.
+    expect(r.stdout.indexOf("Ask the user: Install")).toBeLessThan(
+      r.stdout.indexOf("Install only on the user's explicit yes:"),
+    );
+    // One question about one row, not one question per row.
+    expect(r.stdout.match(/Ask the user: Install /g)).toHaveLength(1);
+    // This row is the case the protocol's rule fires on (relevance >= 1.0);
+    // a fixture that scored below it would pin the line but not the flow.
+    const row = r.stdout.split("\n").find((l) => l.includes("kostja94/marketing-skills@linkedin-posts ("))!;
+    expect(Number(/relevance=(\d+\.\d+)/.exec(row)![1])).toBeGreaterThanOrEqual(1);
+    // Printing a question is still not installing.
+    expect(stubCalls(home).filter((c) => c[0] === "add")).toEqual([]);
+    expect(readLockFile(home)).toEqual({});
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("the question repeats that row's own numbers, estimate marker included", async () => {
+    // A question quoting a count the row does not show is a question the user
+    // cannot check. `~12 est` is the same string the row prints, from the
+    // same helper — an estimate must not reach the user as a fact.
+    const home = freshHome("find-question-est");
+    const idx = writeIndex(home, [
+      rec({ name: "snorklex", source: "someorg/repo", pkg: "someorg/repo@snorklex",
+            description: "Snorklex data processor for snorklex pipelines and snorklex jobs.",
+            installs: null, installsPrior: 12, estimated: true, scan: "unknown" }),
+    ]);
+    const r = await runCli(["find", "snorklex", "--index", idx], { home });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain("someorg/repo@snorklex (~12 est installs, scan=unknown, relevance=");
+    expect(r.stdout).toContain(
+      "Ask the user: Install someorg/repo@snorklex (~12 est installs, publisher someorg, scan unknown) for this task? yes/no",
     );
     fs.rmSync(home, { recursive: true, force: true });
   });
@@ -470,7 +527,7 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     // was empty — hiding the allowlisted, auto-installable candidate.
     expect(r3.stdout).toContain("anthropics/skills@sprocketamatic");
     expect(r3.stdout).not.toContain("sprocketamatic-ghost");
-    expect(r3.stdout).toContain("[ask: auto-install is off;");
+    expect(r3.stdout).toContain("[ask: needs your yes — auto-install is off;");
     fs.rmSync(home, { recursive: true, force: true });
   });
 });
@@ -535,8 +592,8 @@ describe("find: ranking is a signal, not an action", () => {
     const second = r.stdout.indexOf("anthropics/skills@zorptastic ");
     expect(first).toBeGreaterThanOrEqual(0);
     expect(second).toBeGreaterThan(first); // rank order preserved
-    expect(r.stdout).toContain("[ask: publisher someorg not allowlisted]");
-    expect(r.stdout).toContain("[ask: auto-install is off; publisher anthropics is allowlisted, scan clean]");
+    expect(r.stdout).toContain("[ask: needs your yes — publisher someorg not allowlisted]");
+    expect(r.stdout).toContain("[ask: needs your yes — auto-install is off; publisher anthropics is allowlisted, scan clean]");
     expect(stubCalls(home).filter((c) => c[0] === "add")).toEqual([]);
     expect(readLockFile(home)).toEqual({});
     fs.rmSync(home, { recursive: true, force: true });
@@ -578,6 +635,9 @@ describe("find: ranking is a signal, not an action", () => {
     expect(r.stdout).toContain('No skills found for "flumbex widget"');
     expect(r.stdout).not.toContain("ask the user ONE question");
     expect(r.stdout).not.toContain("install <pkg> --force");
+    // No askable row, so there is nothing to ask about. A question naming a
+    // package no flag can install is a wasted turn ending in a failed command.
+    expect(r.stdout).not.toContain("Ask the user: Install");
     fs.rmSync(home, { recursive: true, force: true });
   });
 
@@ -635,29 +695,39 @@ describe("find: logs what it found, not just the query (task 14)", () => {
     return JSON.parse(raw[raw.length - 1]!);
   }
 
-  it("find logs every printed hit with its decision", async () => {
+  it("find logs every printed hit with its decision, in the order it printed them", async () => {
     const home = freshHome("find-log-hits");
     const idx = writeIndex(home, [
+      // Dirty scan: `deny`, whatever else is true of the row — and ranked
+      // FIRST here (most "gadgetfoo" repeats), which is the case that tells
+      // the two candidate orders apart. The log used to be written in search
+      // rank order while stdout prints askable rows first and the refused
+      // block last, so a reader lining the log up against what they saw got
+      // rows in an order that appeared nowhere on screen.
+      rec({ name: "gadgetfoo-old", source: "otherorg/tools", pkg: "otherorg/tools@gadgetfoo-old",
+            description: "Gadgetfoo legacy: gadgetfoo tool for gadgetfoo jobs, gadgetfoo builds, gadgetfoo runs.",
+            installs: 999999, scan: "dirty", scanFindings: ["eval( in script.py"] }),
       // Allowlisted + clean + a real install count: decide() computes `auto`,
       // and trust.auto_install is off by default, so this prints (and must
       // log) `ask`.
       rec({ name: "gadgetfoo-pro", source: "anthropics/skills", pkg: "anthropics/skills@gadgetfoo-pro",
-            description: "Gadgetfoo automation: gadgetfoo toolkit for gadgetfoo pipelines and gadgetfoo builds.",
+            description: "Gadgetfoo automation: gadgetfoo toolkit for gadgetfoo pipelines.",
             installs: 999999 }),
       // Estimated installs: `ask`, ahead of any allowlist check
       // (policy.ts's verdictFor), whatever the publisher.
       rec({ name: "gadgetfoo-lite", source: "someorg/repo", pkg: "someorg/repo@gadgetfoo-lite",
             description: "Lightweight gadgetfoo helper for gadgetfoo tasks.",
             installs: null, installsPrior: 20, estimated: true }),
-      // Dirty scan: `deny`, whatever else is true of the row.
-      rec({ name: "gadgetfoo-old", source: "otherorg/tools", pkg: "otherorg/tools@gadgetfoo-old",
-            description: "Gadgetfoo legacy tool.", installs: 999999,
-            scan: "dirty", scanFindings: ["eval( in script.py"] }),
     ]);
     const r = await runCli(["find", "gadgetfoo", "--index", idx], { home });
     expect(r.code).toBe(0);
-    // Pin the rank order the log assertion below assumes: descending count of
-    // "gadgetfoo" repeats in each description/name is what BM25 ranks on.
+    // The denied row outranks both askable rows — relevance says so — and
+    // still prints last, under "Refused by policy".
+    const relOf = (pkg: string): number => {
+      const row = r.stdout.split("\n").find((l) => l.includes(`${pkg} (`))!;
+      return Number(/relevance=(\d+\.\d+)/.exec(row)![1]);
+    };
+    expect(relOf("otherorg/tools@gadgetfoo-old")).toBeGreaterThan(relOf("anthropics/skills@gadgetfoo-pro"));
     const posPro = r.stdout.indexOf("anthropics/skills@gadgetfoo-pro");
     const posLite = r.stdout.indexOf("someorg/repo@gadgetfoo-lite");
     const posOld = r.stdout.indexOf("otherorg/tools@gadgetfoo-old");
@@ -668,11 +738,18 @@ describe("find: logs what it found, not just the query (task 14)", () => {
     const log = readLastLog(home);
     expect(log.covered).toEqual([]);
     expect(log.installed).toEqual([]);
+    // Exactly the stdout order above: askable rows in rank order, then the
+    // refused ones.
     expect(log.discovered).toEqual([
       { pkg: "anthropics/skills@gadgetfoo-pro", installs: 999999, publisher: "anthropics", decision: "ask", scan: "clean" },
       { pkg: "someorg/repo@gadgetfoo-lite", installs: 20, publisher: "someorg", decision: "ask", scan: "clean" },
       { pkg: "otherorg/tools@gadgetfoo-old", installs: 999999, publisher: "otherorg", decision: "deny", scan: "dirty" },
     ]);
+    // The question names the top ASKABLE row: a denied row above it is not
+    // askable at any relevance, and no flag installs it.
+    expect(r.stdout).toContain(
+      "Ask the user: Install anthropics/skills@gadgetfoo-pro (999999 installs, publisher anthropics, scan clean) for this task? yes/no",
+    );
     fs.rmSync(home, { recursive: true, force: true });
   });
 
