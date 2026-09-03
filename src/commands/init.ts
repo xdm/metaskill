@@ -25,16 +25,28 @@ function commandsDstDir(): string {
 // Self-install: copy the package to ~/.metaskill/bin so hooks and commands
 // reference a path that outlives the npx cache and node version switches.
 // This is what makes `npx @xdma/metaskill init` a safe permanent setup.
-function installSelfCopy(): void {
+//
+// Returns whether index-snapshot.json was copied. It is the offline search
+// floor `find` reads before the first `sync` — shipped in the npm package,
+// but gitignored (and `npm run snapshot`-built) in the checkout, so its
+// absence is routine, not an error; initCommand turns this into a warning
+// rather than copying it silently or letting a re-init delete a prior copy
+// (this file was excluded from the loop below three times before).
+function installSelfCopy(): boolean {
   const src = packageRoot();
   const dst = stablePkgDir();
-  if (path.resolve(src) === path.resolve(dst)) return; // running from the stable copy
+  const snapshotName = "index-snapshot.json";
+  if (path.resolve(src) === path.resolve(dst)) return fs.existsSync(path.join(dst, snapshotName)); // running from the stable copy
   fs.rmSync(dst, { recursive: true, force: true });
   fs.mkdirSync(dst, { recursive: true });
   for (const entry of ["dist", "skills", "commands", "templates", "package.json"]) {
     const from = path.join(src, entry);
     if (fs.existsSync(from)) fs.cpSync(from, path.join(dst, entry), { recursive: true });
   }
+  const snapshotSrc = path.join(src, snapshotName);
+  const hasSnapshot = fs.existsSync(snapshotSrc);
+  if (hasSnapshot) fs.cpSync(snapshotSrc, path.join(dst, snapshotName));
+  return hasSnapshot;
 }
 
 // The command files resolve the CLI themselves (plugin root, else the
@@ -130,7 +142,7 @@ export async function initCommand(flags: InitFlags): Promise<number> {
     return 1;
   }
 
-  installSelfCopy();
+  const snapshotCopied = installSelfCopy();
   writeSettings(settingsFile, addHooks(settings));
 
   // Policy template only if absent — never clobber user edits.
@@ -149,11 +161,15 @@ export async function initCommand(flags: InitFlags): Promise<number> {
   const slashCommands = installSlashCommands();
 
   const skillsOk = await checkSkillsCli();
+  const snapshotDst = path.join(stablePkgDir(), "index-snapshot.json");
 
   process.stdout.write(
     [
       `metaskill: hooks registered in ${settingsFile} (UserPromptSubmit -> route, SessionStart -> sync).`,
       `Engine: ${stablePkgDir()} (self-installed copy; re-run init after upgrades)`,
+      snapshotCopied
+        ? `Index snapshot: ${snapshotDst}`
+        : "Index snapshot: none (index-snapshot.json not found in the package) — run `npm run snapshot` in the package and re-run init (find works after the first sync meanwhile)",
       `Policy: ${policyPath()}`,
       `Skill: ${path.join(metaskillSkillDir, "SKILL.md")}`,
       ...(slashCommands.length ? [`Slash commands: ${slashCommands.join(", ")} (new Claude Code sessions)`] : []),

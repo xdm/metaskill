@@ -62,15 +62,23 @@ function freshHome(tag: string): string {
 }
 
 // A complete, relocatable copy of the package: dist/cli.js under a temp root,
-// so packageRoot() — and with it snapshotPath() — resolves inside the
-// sandbox. It is the only way to exercise the packaged-snapshot fallback
-// without writing to the checkout's own index-snapshot.json, which an earlier
-// test did (clobbering a real artifact mid-run and restoring it in a
-// `finally`). Returns the path of the CLI to spawn.
+// so packageRoot() — and with it snapshotPath() and installSelfCopy()'s own
+// asset copies — resolves inside the sandbox. It is the only way to exercise
+// the packaged-snapshot fallback, or `init`'s self-install, without writing
+// to the checkout's own index-snapshot.json (an earlier test did, clobbering
+// a real artifact mid-run and restoring it in a `finally`) or its real
+// ~/.metaskill/bin. templates/skills/commands are real copies from this
+// checkout: initCommand reads templates/metaskill.yaml and
+// skills/metaskill/SKILL.md unconditionally (no existsSync guard), so a
+// root missing them makes any init test fail on an ENOENT, not the
+// assertion under test. Returns the path of the CLI to spawn.
 function tempPackage(tag: string, snapshot?: unknown): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), `metaskill-pkg-${tag}-`));
   fs.mkdirSync(path.join(root, "dist"), { recursive: true });
   fs.copyFileSync(CLI, path.join(root, "dist", "cli.js"));
+  for (const dir of ["templates", "skills", "commands"]) {
+    fs.cpSync(path.join(ROOT, dir), path.join(root, dir), { recursive: true });
+  }
   if (snapshot !== undefined) {
     fs.writeFileSync(path.join(root, "index-snapshot.json"), JSON.stringify(snapshot));
   }
@@ -1219,6 +1227,58 @@ describe("init end-to-end (spec 4.1)", () => {
     const r = await runCli(["init"], { home });
     expect(r.code).toBe(1);
     expect(fs.readFileSync(settingsFile, "utf8")).toBe("{broken json");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  // installSelfCopy's entry loop (dist, skills, commands, templates,
+  // package.json) never named index-snapshot.json, so every re-init on the
+  // npm channel silently deleted the offline search floor `find` reads
+  // before the first `sync` — surfaced three times. These run a copy of the
+  // CLI from a temp package root (see tempPackage above) so packageRoot(),
+  // and with it the snapshot's source path, resolves inside the sandbox
+  // instead of the checkout's own gitignored index-snapshot.json.
+
+  it("init copies the index snapshot into the stable engine dir", async () => {
+    const home = freshHome("init-snapshot");
+    const snapshot = indexFile([rec({ name: "snap", source: "o/r", pkg: "o/r@snap" })]);
+    const cli = tempPackage("init-snapshot", snapshot);
+    const pkgRoot = path.dirname(path.dirname(cli)); // <root>/dist/cli.js -> <root>
+    const r = await runCli(["init"], { home, cli });
+    expect(r.code).toBe(0);
+    const dst = path.join(home, ".metaskill", "bin", "index-snapshot.json");
+    expect(r.stdout).toContain(`Index snapshot: ${dst}`);
+    expect(fs.existsSync(dst)).toBe(true);
+    const same = fs.readFileSync(dst).equals(fs.readFileSync(path.join(pkgRoot, "index-snapshot.json")));
+    expect(same).toBe(true);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("init warns, and still succeeds, when no snapshot is present", async () => {
+    const home = freshHome("init-no-snapshot");
+    const cli = tempPackage("init-no-snapshot"); // no snapshot arg -> file absent in the package root
+    const r = await runCli(["init"], { home, cli });
+    expect(r.code).toBe(0);
+    const combined = r.stdout + r.stderr;
+    expect(combined).toContain("index-snapshot.json");
+    expect(combined).toContain("npm run snapshot");
+    expect(fs.existsSync(path.join(home, ".metaskill", "bin", "index-snapshot.json"))).toBe(false);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("re-running init keeps the snapshot", async () => {
+    const home = freshHome("init-snapshot-rerun");
+    const snapshot = indexFile([rec({ name: "snap", source: "o/r", pkg: "o/r@snap" })]);
+    const cli = tempPackage("init-snapshot-rerun", snapshot);
+    const dst = path.join(home, ".metaskill", "bin", "index-snapshot.json");
+
+    const r1 = await runCli(["init"], { home, cli });
+    expect(r1.code).toBe(0);
+    expect(fs.existsSync(dst)).toBe(true);
+
+    const r2 = await runCli(["init"], { home, cli });
+    expect(r2.code).toBe(0);
+    expect(fs.existsSync(dst)).toBe(true);
+    expect(r2.stdout).toContain(`Index snapshot: ${dst}`);
     fs.rmSync(home, { recursive: true, force: true });
   });
 });
