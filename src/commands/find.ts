@@ -7,7 +7,7 @@ import { readLock } from "../lock.js";
 import { findPlugins, formatPluginLine } from "../plugins.js";
 import { decide, loadPolicy } from "../policy.js";
 import { appendLog, hashPrompt } from "../log.js";
-import type { Candidate, InstalledSkill } from "../types.js";
+import type { Candidate, DiscoveredLogItem, InstalledSkill } from "../types.js";
 
 export function recordToCandidate(r: IndexRecord): Candidate {
   return {
@@ -83,7 +83,14 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     // `installed` is always empty: find ranks, it does not install. The field
     // stays in the record because `log --stats` and older log lines share the
     // shape, and `install` may still write a non-empty one.
-    const logFind = (covered: string[]) =>
+    //
+    // `discovered` is required, not defaulted to `[]`, on purpose (task 14):
+    // a log row used to carry `discovered: []` unconditionally, so a user
+    // reading `domains=[find:linkedin post copywriting] 54ms` on its own had
+    // no way to tell "found nothing" from "found five and asked" — the first
+    // question anyone reading the log actually has. Every call site below now
+    // states its own answer instead of inheriting a silent default.
+    const logFind = (covered: string[], discovered: DiscoveredLogItem[]) =>
       appendLog(
         {
           ts: new Date().toISOString(),
@@ -91,7 +98,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
           prompt_hash: hashPrompt(`find:${q}`),
           domains: [`find:${q}`],
           covered,
-          discovered: [],
+          discovered,
           installed: [],
           latency_ms: Date.now() - t0,
         },
@@ -109,7 +116,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     const present = alreadyPresent(q, listInstalledSkills(process.cwd()));
     if (present) {
       process.stdout.write(`[metaskill] Already present: ${present.name} — use ${present.dir}/SKILL.md\n${pluginLine}`);
-      logFind([present.name]);
+      logFind([present.name], []);
       return 0;
     }
 
@@ -156,11 +163,11 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
           process.stdout.write(
             `[metaskill] Registry did not answer for "${q}" — this is not a miss. Solve the task without a skill, or run find once more.\n${pluginLine}`,
           );
-          logFind([]);
+          logFind([], []);
           return 0;
         }
         process.stdout.write(`[metaskill] No skills found for "${q}". Solve the task without one.\n${pluginLine}`);
-        logFind([]);
+        logFind([], []);
         return 0;
       }
       const top = [...cands].sort((a, b) => b.installs - a.installs)[0]!;
@@ -172,7 +179,13 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
           // works for half of `find`'s outcomes.
           `Ask the user one question before installing; on an explicit yes run: ${metaskillCmd()} install ${top.pkg} --force --matched "${q}"\n${pluginLine}`,
       );
-      logFind([]);
+      // The live registry never returns a scan verdict (spec §10 open
+      // question, task 14 self-review's known gap) — "unavailable" is a fact
+      // about the fallback path, not a guess, and `decide()` would route an
+      // unscanned candidate to `ask` regardless, so hard-coding it here
+      // matches what policy would compute without paying for a scan nobody
+      // asked for.
+      logFind([], [{ pkg: top.pkg, installs: top.installs, publisher: top.publisher, decision: "ask", scan: "unavailable" }]);
       return 0;
     }
 
@@ -185,8 +198,21 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     // decision column says; `trust.auto_install: true` re-arms the automatic
     // path, and even then it is `install` that acts on it, never this command.
     const rows = hits.map((h) => {
-      const v = decide(recordToCandidate(h.record), scanResultFromIndex(h.record), policy);
-      return { r: h.record, rel: h.relevance, v };
+      const scan = scanResultFromIndex(h.record);
+      const v = decide(recordToCandidate(h.record), scan, policy);
+      return { r: h.record, rel: h.relevance, v, scan };
+    });
+
+    // One DiscoveredLogItem per row, in `rows`' own order (search()'s rank
+    // order — the order every row here was already built in, ask and deny
+    // alike). `scan` reuses scanResultFromIndex's status rather than
+    // re-deriving the unknown -> unavailable mapping a second time.
+    const toDiscovered = (x: (typeof rows)[number]): DiscoveredLogItem => ({
+      pkg: x.r.pkg,
+      installs: x.r.installs ?? x.r.installsPrior ?? 0,
+      publisher: publisherOf(x.r.pkg),
+      decision: x.v.decision,
+      scan: x.scan.status,
     });
 
     // Denied rows never appear under the ask header. Listed there, above a
@@ -208,7 +234,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       process.stdout.write(
         `[metaskill] No skills found for "${q}". Solve the task without one.\n${deniedBlock}${pluginLine}`,
       );
-      logFind([]);
+      logFind([], rows.map(toDiscovered));
       return 0;
     }
     process.stdout.write(
@@ -220,7 +246,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
         // next time via alreadyPresent's lock check above — see install.ts.
         `\nInstall only on the user's explicit yes: ${metaskillCmd()} install <pkg> --force --matched "${q}"\n${deniedBlock}${pluginLine}`,
     );
-    logFind([]);
+    logFind([], rows.map(toDiscovered));
     return 0;
   } catch (err) {
     process.stderr.write(`[metaskill] find error: ${(err as Error).message}\n`);

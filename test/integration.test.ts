@@ -625,6 +625,80 @@ describe("find: ranking is a signal, not an action", () => {
   });
 });
 
+describe("find: logs what it found, not just the query (task 14)", () => {
+  // A user reading `domains=[find:linkedin post copywriting] 54ms` on its own
+  // read it as "found nothing" — `logFind` wrote `discovered: []`
+  // unconditionally, so the log could not answer the first question anyone
+  // asks of it. These pin every `discovered` shape `find` can now write.
+  function readLastLog(home: string): any {
+    const raw = fs.readFileSync(path.join(home, ".metaskill", "log.jsonl"), "utf8").trim().split("\n").filter(Boolean);
+    return JSON.parse(raw[raw.length - 1]!);
+  }
+
+  it("find logs every printed hit with its decision", async () => {
+    const home = freshHome("find-log-hits");
+    const idx = writeIndex(home, [
+      // Allowlisted + clean + a real install count: decide() computes `auto`,
+      // and trust.auto_install is off by default, so this prints (and must
+      // log) `ask`.
+      rec({ name: "gadgetfoo-pro", source: "anthropics/skills", pkg: "anthropics/skills@gadgetfoo-pro",
+            description: "Gadgetfoo automation: gadgetfoo toolkit for gadgetfoo pipelines and gadgetfoo builds.",
+            installs: 999999 }),
+      // Estimated installs: `ask`, ahead of any allowlist check
+      // (policy.ts's verdictFor), whatever the publisher.
+      rec({ name: "gadgetfoo-lite", source: "someorg/repo", pkg: "someorg/repo@gadgetfoo-lite",
+            description: "Lightweight gadgetfoo helper for gadgetfoo tasks.",
+            installs: null, installsPrior: 20, estimated: true }),
+      // Dirty scan: `deny`, whatever else is true of the row.
+      rec({ name: "gadgetfoo-old", source: "otherorg/tools", pkg: "otherorg/tools@gadgetfoo-old",
+            description: "Gadgetfoo legacy tool.", installs: 999999,
+            scan: "dirty", scanFindings: ["eval( in script.py"] }),
+    ]);
+    const r = await runCli(["find", "gadgetfoo", "--index", idx], { home });
+    expect(r.code).toBe(0);
+    // Pin the rank order the log assertion below assumes: descending count of
+    // "gadgetfoo" repeats in each description/name is what BM25 ranks on.
+    const posPro = r.stdout.indexOf("anthropics/skills@gadgetfoo-pro");
+    const posLite = r.stdout.indexOf("someorg/repo@gadgetfoo-lite");
+    const posOld = r.stdout.indexOf("otherorg/tools@gadgetfoo-old");
+    expect(posPro).toBeGreaterThanOrEqual(0);
+    expect(posLite).toBeGreaterThan(posPro);
+    expect(posOld).toBeGreaterThan(posLite);
+
+    const log = readLastLog(home);
+    expect(log.covered).toEqual([]);
+    expect(log.installed).toEqual([]);
+    expect(log.discovered).toEqual([
+      { pkg: "anthropics/skills@gadgetfoo-pro", installs: 999999, publisher: "anthropics", decision: "ask", scan: "clean" },
+      { pkg: "someorg/repo@gadgetfoo-lite", installs: 20, publisher: "someorg", decision: "ask", scan: "clean" },
+      { pkg: "otherorg/tools@gadgetfoo-old", installs: 999999, publisher: "otherorg", decision: "deny", scan: "dirty" },
+    ]);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("find logs the live-fallback candidate and nothing on did-not-answer", async () => {
+    const home = freshHome("find-log-live");
+    // No index.json seeded: loadIndex() finds nothing, so `find` falls
+    // through to the live search against the stub's "reddit" fixture — same
+    // setup as the live-fallback round-trip test above.
+    const found = await runCli(["find", "reddit"], { home });
+    expect(found.code).toBe(0);
+    expect(found.stdout).toContain("live search found modelscope.cn@reddit-helper");
+    expect(readLastLog(home).discovered).toEqual([
+      { pkg: "modelscope.cn@reddit-helper", installs: 146100, publisher: "modelscope.cn", decision: "ask", scan: "unavailable" },
+    ]);
+
+    // A different query (distinct cache key), stubbed to fail outright: the
+    // registry never answered, which is not the same fact as "found nothing"
+    // and must not be logged as though something was found and refused.
+    const failed = await runCli(["find", "zzqq nomatch"], { home, env: { STUB_FIND_FAIL: "1" } });
+    expect(failed.code).toBe(0);
+    expect(failed.stdout).toContain("Registry did not answer");
+    expect(readLastLog(home).discovered).toEqual([]);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+});
+
 describe("find: reinstall protection matches a name, never a word inside one", () => {
   function installSkillOnDisk(home: string, name: string): void {
     const dir = path.join(home, ".claude", "skills", name);

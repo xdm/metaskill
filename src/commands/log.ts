@@ -12,6 +12,12 @@ import type { RouteLogEntry } from "../types.js";
 // before/after.
 const LOOKUP_SESSIONS = new Set(["find", "search", "manual"]);
 
+// A ceiling on how many `discovered` items a single tail row prints, so a
+// hand-edited or future-schema log line with an unbounded array cannot
+// produce one unreadably long line. `find` never writes more than 5 today
+// (search()'s own top-N), so this never trims a real row.
+const MAX_DISCOVERED_SHOWN = 5;
+
 // Rows metaskill writes about itself rather than about a prompt or a
 // model-driven lookup. "install" is `install`'s own bookkeeping row (spec:
 // one per successful install, so `list`/`log` have a record) — it answers no
@@ -62,14 +68,21 @@ export function logCommand(n: number, opts: { stats?: boolean } = {}): number {
     return 0;
   }
   for (const e of entries) {
+    const notInstalled = e.discovered.filter((d) => !e.installed.includes(d.pkg));
+    // `find` never carries more than 5 (search()'s own top-N), so this cap
+    // does not shorten a real row today — it is a ceiling against a
+    // hand-edited or future log line, not a reduction of what `find` found
+    // (task 14: hiding hits here would just reintroduce a milder version of
+    // the "found nothing" defect this row exists to fix).
+    const shown = notInstalled.slice(0, MAX_DISCOVERED_SHOWN);
+    const overflow = notInstalled.length - shown.length;
     const parts = [
       e.ts,
       `domains=[${e.domains.join(",")}]`,
       e.covered.length ? `covered=[${e.covered.join(",")}]` : null,
       e.installed.length ? `installed=[${e.installed.join(",")}]` : null,
-      ...e.discovered
-        .filter((d) => !e.installed.includes(d.pkg))
-        .map((d) => `${d.decision}:${d.pkg}(${d.installs},scan=${d.scan})`),
+      ...shown.map((d) => `${d.decision}:${d.pkg}(${d.installs},scan=${d.scan})`),
+      overflow > 0 ? `+${overflow} more` : null,
       `${e.latency_ms}ms`,
     ].filter(Boolean);
     process.stdout.write(parts.join(" ") + "\n");
