@@ -34,8 +34,8 @@ of them.
 
 But a skill only helps if it's installed *before* the task, and that part is
 entirely manual: you have to know a skill exists for the thing you're about
-to ask, search the registry, compare candidates, judge which publishers to
-trust, install the winner, and keep everything up to date. Nobody actually
+to ask, search the registry, compare candidates, work out which publishers
+to trust, install the winner, and keep everything up to date. Nobody actually
 does this. Most people install two or three skills the week they discover the
 registry, then forget it exists, and Claude quietly goes back to
 improvising.
@@ -63,18 +63,19 @@ Between pressing Enter and Claude's first token:
    each one past the trust policy:
 
 ```
-[metaskill] Top matches for "xlsx export formulas" — find does not install. The line under the rows has applied the relevance rule to the top row you could install: `Ask the user:` (relevance >= 1.0) — likely fit: read the row's description; if it fits the task, ask that question first; if it is a different thing with the same word, say nothing and solve the task; `Borderline match` — judge whether it fits, then ask first; `Weak matches only` (under 0.5) — solve the task yourself.
-  aiskillstore/marketplace@xlsx (237 installs, scan=unknown, relevance=0.90) [ask: needs your yes — publisher aiskillstore not allowlisted]
+[metaskill] Top matches for "xlsx export formulas" — find does not install. The line under the rows has applied the relevance rule to the top row you could install: `Ask the user:` (relevance >= 0.55) — read that row's description; if it is a different thing with the same word, or has no description, say nothing and solve the task; otherwise ask that question FIRST, before any work; `Weak matches only` (under 0.55) — solve the task yourself, silently.
+  aiskillstore/marketplace@xlsx (237 installs, scan=unknown, relevance=0.96) [ask: needs your yes — publisher aiskillstore not allowlisted]
     Spreadsheet toolkit (.xlsx/.csv). Create/edit with formulas/formatting, analyze data, visualization, recalculate formulas, for spreadsheet p
-  davila7/claude-code-templates@xlsx (949 installs, scan=clean, relevance=0.90) [ask: needs your yes — publisher davila7 not allowlisted]
+  davila7/claude-code-templates@xlsx (951 installs, scan=clean, relevance=0.96) [ask: needs your yes — publisher davila7 not allowlisted]
     Spreadsheet toolkit (.xlsx/.csv). Create/edit with formulas/formatting, analyze data, visualization, recalculate formulas, for spreadsheet p
-  datadrivenconstruction/ddc_skills_for_ai_agents_in_construction@xlsx-construction (101 installs, scan=unknown, relevance=0.69) [ask: needs your yes — publisher datadrivenconstruction not allowlisted]
+  datadrivenconstruction/ddc_skills_for_ai_agents_in_construction@xlsx-construction (101 installs, scan=unknown, relevance=0.76) [ask: needs your yes — publisher datadrivenconstruction not allowlisted]
     Excel/spreadsheet processing for construction: estimates, schedules, tracking logs, quantity takeoffs. Formulas, formatting, analysis.
-  vasilyu1983/ai-agents-public@document-xlsx (841 installs, scan=clean, relevance=0.68) [ask: needs your yes — publisher vasilyu1983 not allowlisted]
+  vasilyu1983/ai-agents-public@document-xlsx (844 installs, scan=clean, relevance=0.75) [ask: needs your yes — publisher vasilyu1983 not allowlisted]
     Create/edit .xlsx spreadsheets with tables, formulas, charts, validation, and workbook automation. Use when asked to generate Excel reports,
-  ailabs-393/ai-labs-claude-skills@xlsx (876 installs, scan=clean, relevance=0.67) [ask: needs your yes — publisher ailabs-393 not allowlisted]
+  ailabs-393/ai-labs-claude-skills@xlsx (880 installs, scan=clean, relevance=0.74) [ask: needs your yes — publisher ailabs-393 not allowlisted]
     Comprehensive spreadsheet creation, editing, and analysis with support for formulas, formatting, data analysis, and visualization. When Clau
-Borderline match (relevance 0.90) — judge whether aiskillstore/marketplace@xlsx fits. If it does, ask exactly this, first — via the tool if you have it, else as one line and nothing else: Install aiskillstore/marketplace@xlsx (237 installs, publisher aiskillstore, scan unknown) for this task? yes/no
+Likely fit (relevance 0.96) — read the row's description first: if it fits the task, ask the question below, first, via the tool if you have it; if it is a different thing with the same word, say nothing and solve the task; if the description is blank or a bare mark (`>`, `|`), you cannot confirm the fit — say nothing and solve the task.
+Ask the user: Install aiskillstore/marketplace@xlsx (237 installs, publisher aiskillstore, scan unknown) for this task? yes/no
 Install only on the user's explicit yes: "/Users/you/.nvm/versions/node/v24.17.0/bin/node" "/Users/you/.metaskill/bin/dist/cli.js" install aiskillstore/marketplace@xlsx --force --matched "xlsx export formulas"
 ```
 
@@ -85,19 +86,26 @@ Install only on the user's explicit yes: "/Users/you/.nvm/versions/node/v24.17.0
    because none of these publishers is allowlisted; an allowlisted publisher
    with a clean scan reads `auto-install is off` instead — the shipped
    default, where the verdict is computed in full and then held for your yes.
-5. The lines under the rows are what Claude acts on, and they are banded on
-   `relevance`. The top row here is 0.90 — `Borderline match` — so Claude has
-   to judge whether the row really fits, and only then asks, before it starts
-   the task. At 1.0 and above the question itself prints (`Ask the user:`),
-   under a cue telling Claude to read that row's description first: a rare
-   word ranks its wrong sense just as highly — "insomnia help" finds a REST
-   client called Insomnia — so a top row that is a different thing with the
-   same word is declined in silence. Below 0.5 it reads `Weak matches only`
-   and Claude solves the task alone. In both asking bands the question is
-   written out for it — package, publisher, install count, scan verdict —
-   because a question Claude has to compose is a question it talks itself out
-   of asking. Nothing installs without your explicit yes, with the command
-   that line printed.
+5. The line under the rows is what Claude acts on, and there are two of them
+   to choose from — no middle one. At `relevance` 0.55 and above the question
+   itself prints (`Ask the user:`), under a cue telling Claude to read that
+   row's description first: a rare word ranks its wrong sense just as highly
+   — "insomnia help" finds a REST client called Insomnia — so a top row that
+   is a different thing with the same word, or one with no description to
+   read, is declined in silence. Anything else at or above the line is asked
+   about, first, before Claude starts the task; there is no band in which it
+   gets to weigh whether asking is worth the turn, because that is the slot
+   five real lookups in a row used to skip the question entirely. Below 0.55
+   it reads `Weak matches only` and Claude solves the task alone. The
+   question is written out for it — package, publisher, install count, scan
+   verdict — because a question Claude has to compose is a question it talks
+   itself out of asking. Nothing installs without your explicit yes, with the
+   command that line printed.
+
+   0.55 is measured, not picked: on 52 queries (47 everyday phrases plus five
+   real ones from a working session), it is the highest threshold that still
+   admits every query whose top row deserved a question. The rows above it
+   that do *not* deserve one are what the description check is for.
 
 A local index hit like this is one fast subprocess call; installing a skill —
 or, on an index miss, the one live registry search, capped at 4 seconds — is

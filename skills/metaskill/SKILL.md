@@ -40,32 +40,33 @@ match sits around 1.0 or above; a low `relevance` means the row barely matched
 the words — decline it.
 
 The number on the row `find` singles out decides what happens next; it is a
-rule, not a call you make. `find` applies it: under the rows it prints the
-line that decides, about the top row you could still install.
+rule, not a call you make. `find` applies it and prints the deciding line
+under the rows, about the top row you could still install. Two outcomes,
+no middle.
 
-- **`Ask the user: Install ... ? yes/no`** (`relevance` >= 1.0) — a likely
+- **`Ask the user: Install ... ? yes/no`** (`relevance` >= 0.55) — a likely
   fit: read the row's description. If it fits the task, ask that question
   first, relayed as printed — it already names the package, its install
   count, its publisher and its scan verdict. Not left unasked because you
   could do the task yourself: you almost always could; that is not what the
-  question is for. But a rare word scores high in the wrong sense too, so if
-  it is a different thing with the same word — an `insomnia` REST client for
-  a sleep question — say nothing and solve the task.
-- **`Borderline match`** (`relevance` >= 0.5) — judge whether that row really
-  fits the task. The cue prints the question for you — "ask exactly this,
-  first — via the tool if you have it, else as one line and nothing else:
-  ..." — so if it fits, ask that, first.
-- **`Weak matches only`** (under 0.5) — decline and say nothing.
+  question is for. Say nothing only on a check the row itself settles: a
+  rare word scores high in the wrong sense too, so if it is a different thing
+  with the same word — an `insomnia` REST client for a sleep question — or
+  the description is blank or a bare `>` or `|`, solve the task in silence.
+- **`Weak matches only`** (under 0.55) — decline and say nothing.
 
 Asking means asking before you start the task, not inside an answer you have
 already begun: use the `AskUserQuestion` tool if you have it — option label
 `Install <skill name>`, the full package in its description, `No` as the
-other option — else send one line of text and nothing else. Neither asking
-band asks about a row whose description is blank or a bare `>` or `|`: no
-question is printed for a row you cannot check — say nothing and solve the
-task.
+other option — else send one line of text and nothing else.
 
-A **`live search found`** hit has no relevance to band and no scan verdict,
+`find` never asks about a row whose description is blank or a bare `>` or
+`|`: no question is printed for a row you cannot check. If a readable row
+under it still clears 0.55, the question names THAT row and the line says
+which it stepped over; with no readable row at all it prints no question and
+no install command — say nothing and solve the task.
+
+A **`live search found`** hit has no relevance to place and no scan verdict,
 so it is always `ask`. It prints its question — ask it the same way.
 
 Act on what it prints:

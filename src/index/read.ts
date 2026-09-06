@@ -27,22 +27,59 @@ export interface Hit {
   relevance: number;
 }
 
-// The two thresholds that decide what `find` PRINTS under the rows, and so
-// what the model does next. They are not a gate on the search: every hit is
+// The ONE threshold that decides what `find` PRINTS under the rows, and so
+// what the model does next. It is not a gate on the search: every hit is
 // still listed with its own number, because the distributions above say no
-// floor can separate junk from capability phrases. What they gate is the
-// ACTION — a question ready to put to the user, a note to judge the row
-// first, or an instruction to solve the task alone. Left to prose, the rule
-// was ignored: the question printed at relevance 0.08 exactly as it did at
-// 1.58, and a mechanism that costs nothing at the moment the rule says stop
-// is not a rule, it is a suggestion beside a button.
+// floor can separate junk from capability phrases. What it gates is the
+// ACTION — at or above it, a question ready to put to the user; below it,
+// silence. Left to prose, the rule was ignored: the question printed at
+// relevance 0.08 exactly as it did at 1.58, and a mechanism that costs
+// nothing at the moment the rule says stop is not a rule, it is a suggestion
+// beside a button.
 //
-// 1.0 sits above the measured junk median (0.70) and below the capability
-// median (1.28); 0.5 sits under both, where a row shares a word with the
-// query and little else. Exported so find.ts's bands and the numbers written
-// into the injected protocol cannot drift apart — test/protocol.test.ts
-// asserts the block quotes these very values.
-export const RELEVANCE_BANDS = { ask: 1.0, judge: 0.5 } as const;
+// TWO zones, not three. The middle band ("0.5-1.0: decide whether the row
+// fits, then ask") was the last slot in which the model got to rule on
+// whether to ask at all, and on 2026-09-04 the user's own five `find` calls
+// ALL landed in it and produced no question — four of the five deserved one.
+// Three review rounds ended the same way: a slot that permits skipping is
+// used to skip. So the middle band is gone, and the only silence at or above
+// the threshold is a CHECK the model can make and the score cannot — the row
+// says nothing readable, or plainly names a different thing with the same
+// word.
+//
+// MEASURED 2026-09-06 against index-snapshot.json (4,835 skills), on the 52
+// queries of test/fixtures/everyday-queries.json (47) plus the five real
+// 2026-09-04 queries (test/fixtures/calibration-queries.json). "Deserving" =
+// a top row that answers the query (13 rows: 4 real + the 9 everyday rows
+// flagged `homonym: false`); "undeserving" = a top row that does not (39
+// rows: 1 real + 38 flagged `homonym: true`). Share reaching >= T:
+//
+//     T     deserving >= T     undeserving >= T   deserving REAL >= T
+//   0.45      11/13   85%        33/39   85%           4/4
+//   0.50      10/13   77%        30/39   77%           4/4
+//   0.55      10/13   77%        28/39   72%           4/4   <- chosen
+//   0.60       8/13   62%        23/39   59%           3/4
+//   0.65       8/13   62%        18/39   46%           3/4
+//   0.70       7/13   54%        13/39   33%           2/4
+//
+// 0.55 is the highest candidate that still admits all four deserving real
+// queries — their minimum is 0.56 (`linkedin content writing proptech`), and
+// 0.60 loses it. Going lower buys nothing: at 0.45 the two curves are equal
+// (85% / 85%), i.e. the threshold has stopped discriminating at all, and it
+// admits three more undeserving rows for one more deserving one. It also
+// leaves the one real query that deserved silence (`real estate feed api`,
+// 0.43) below the line with room to spare.
+//
+// 72% of undeserving rows clear 0.55 too. That is expected and is NOT T's
+// job: BM25 ranks a homonym HIGHER when the shared word is rare, so no
+// threshold can separate "insomnia the sleep problem" from "Insomnia the
+// REST client". Those are caught above the line, by the description check
+// find.ts prints — one yes/no about text on the row, with both answers named.
+//
+// Exported so find.ts's zones and the number written into the injected
+// protocol cannot drift apart — test/protocol.test.ts asserts the block
+// quotes this very value.
+export const MIN_ASK_RELEVANCE = 0.55;
 
 // Single characters carry no signal and blow up the term dictionary; version
 // fragments ("1", "2") would otherwise dominate rare-term scoring.

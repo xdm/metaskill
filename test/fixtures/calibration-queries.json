@@ -1,0 +1,45 @@
+{
+  "note": "The five capability phrases a real 2026-09-04 session typed into `metaskill find`. All five landed in the old 0.5-1.0 band and produced no question; four of the five deserved one, which is the measurement that removed that band (see src/index/read.ts's MIN_ASK_RELEVANCE). `deserves` is the hand judgement made from that session's context; `pkg` is search()'s top row and `asked` is the package the printed question names — they differ when the top row has no description to read and `find` falls to the next readable row. Values are against the PACKAGED SNAPSHOT (index-snapshot.json); regenerate after a snapshot refresh.",
+  "queries": [
+    {
+      "query": "content marketing article writing",
+      "deserves": true,
+      "relevance": 0.89,
+      "pkg": "kostja94/marketing-skills@article-content",
+      "outcome": "ask",
+      "asked": "kostja94/marketing-skills@article-content"
+    },
+    {
+      "query": "linkedin content writing proptech",
+      "deserves": true,
+      "relevance": 0.56,
+      "pkg": "samber/cc-skills@linkedin-ghostwriting",
+      "outcome": "ask",
+      "asked": "samber/cc-skills@linkedin-ghostwriting"
+    },
+    {
+      "query": "seo blog article writing",
+      "deserves": true,
+      "relevance": 0.75,
+      "pkg": "affaan-m/ecc@article-writing",
+      "outcome": "ask",
+      "asked": "affaan-m/ecc@article-writing"
+    },
+    {
+      "query": "linkedin outreach prospecting",
+      "deserves": true,
+      "relevance": 0.66,
+      "pkg": "code.deepline.com@portfolio-prospecting",
+      "outcome": "ask",
+      "asked": "coreyhaines31/marketingskills@cold-email"
+    },
+    {
+      "query": "real estate feed api",
+      "deserves": false,
+      "relevance": 0.43,
+      "pkg": "larksuite/cli@lark-im",
+      "outcome": "silent",
+      "asked": null
+    }
+  ]
+}

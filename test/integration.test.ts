@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadIndex, normaliseQuery, search } from "../src/index/read.js";
+import { loadIndex, MIN_ASK_RELEVANCE, normaliseQuery, search } from "../src/index/read.js";
 
 const ROOT = path.resolve(__dirname, "..");
 const CLI = path.join(ROOT, "dist", "cli.js");
@@ -56,6 +56,11 @@ function runCli(
     child.on("close", (code) => resolve({ code, stdout, stderr, ms: performance.now() - t0 }));
     child.stdin.end(opts.input ?? "");
   });
+}
+
+function topRelevanceOf(stdout: string, pkg: string): number {
+  const row = stdout.split("\n").find((l) => l.includes(`${pkg} (`))!;
+  return Number(/relevance=(\d+\.\d+)/.exec(row)![1]);
 }
 
 function freshHome(tag: string): string {
@@ -306,6 +311,13 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     expect(r.stdout).toContain("[auto: publisher anthropics is allowlisted, scan clean]");
     expect(r.stdout).not.toContain("auto-install is off");
     expect(r.stdout).not.toContain("Installed now:");
+    // No verdict line and no install command: an `auto` row needs no question
+    // by definition, so there is no question, and the command that used to
+    // print here named a literal `<pkg>` — a command SKILL.md Rule 1 ("run it
+    // as printed") cannot be obeyed with. The install line now follows the
+    // question and nothing else, so it is absent along with it.
+    expect(r.stdout).not.toContain("Install only on the user's explicit yes:");
+    expect(r.stdout).not.toContain("<pkg>");
     expect(stubCalls(home).filter((c) => c[0] === "add")).toEqual([]);
     expect(readLockFile(home)).toEqual({});
     expect(fs.existsSync(path.join(home, ".claude", "skills", "gizmo"))).toBe(false);
@@ -446,12 +458,15 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  // The bands, end to end. The rule lived only in prose for one round, and
+  // The zones, end to end. The rule lived only in prose for one round, and
   // prose does not gate anything: a top row scoring 0.08 got the same
   // ready-to-relay question as one scoring 1.58, so the cheapest action was
   // "ask" exactly where the rule says be silent — and the question carried no
-  // number to catch it on. `find` applies the bands itself now. One fixture,
-  // three queries, three lines.
+  // number to catch it on. `find` applies the threshold itself now. There are
+  // TWO outcomes: at or above MIN_ASK_RELEVANCE a question ready to relay,
+  // below it silence. The middle band that sat between them ("decide whether
+  // it fits, then ask") is gone — on 2026-09-04 all five of the user's real
+  // `find` calls landed in it and produced no question, four of them wrongly.
   const bandIndex = (home: string): string =>
     writeIndex(home, [
       rec({ name: "snorklex", source: "someorg/repo", pkg: "someorg/repo@snorklex",
@@ -464,25 +479,26 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     const row = stdout.split("\n").find((l) => l.includes(`${pkg} (`))!;
     return Number(/relevance=(\d+\.\d+)/.exec(row)![1]);
   };
-  // The one line the bands produce. The header names all three labels (it
-  // tells the model what each means), so a whole-stdout assertion would match
-  // the wrong copy — this reads the line that was actually chosen.
+  // The one line the zones produce. The header names both labels (it tells
+  // the model what each means), so a whole-stdout assertion would match the
+  // wrong copy — this reads the line that was actually chosen.
   const verdictLines = (stdout: string): string[] =>
     stdout
       .split("\n")
-      .filter((l) => /^(Likely fit|Ask the user: Install|Borderline match|Weak matches only)/.test(l));
+      .filter((l) => /^(Likely fit|Ask the user: Install|Weak matches only)/.test(l));
 
-  it("band >= 1.0: the description check, then the question, and nothing else", async () => {
+  it("at or above the threshold: the description check, then the question, and nothing else", async () => {
     // The question still prints, unchanged and ready to relay — it is the
     // relay when the answer is yes, and composing it was the step the model
-    // skipped on the first real v2 lookup. What is new above it is the one
-    // check the score cannot make: 26 of 47 everyday queries land in this
-    // band against the live index, and most of those top rows are homonyms
-    // ("insomnia help" -> a REST client called insomnia). The cue names both
-    // outcomes, so neither is a slot for "I could just do this myself".
-    const home = freshHome("find-band-ask");
+    // skipped on the first real v2 lookup. What sits above it is the one
+    // check the score cannot make: measured on the 52-query calibration set,
+    // 72% of the rows that clear 0.55 do not deserve a question, and they are
+    // homonyms ("insomnia help" -> a REST client called Insomnia). The cue
+    // names both outcomes, so neither is a slot for "I could just do this
+    // myself".
+    const home = freshHome("find-zone-ask");
     const r = await runCli(["find", "snorklex processor", "--index", bandIndex(home)], { home });
-    expect(topRelevance(r.stdout, "someorg/repo@snorklex")).toBeGreaterThanOrEqual(1);
+    expect(topRelevance(r.stdout, "someorg/repo@snorklex")).toBeGreaterThanOrEqual(MIN_ASK_RELEVANCE);
     expect(verdictLines(r.stdout)).toEqual([
       "Likely fit (relevance 1.40) — read the row's description first: if it fits the task, ask the question below, " +
         "first, via the tool if you have it; if it is a different thing with the same word, say nothing and solve " +
@@ -498,35 +514,96 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  it("band >= 1.0 with nothing to read: the cue says an unconfirmable fit is not one", async () => {
-    // 900 of the shipped snapshot's 4,831 records carry a description that is
-    // blank or a bare YAML block mark (`>`, `|`, `>-`) — 18.6% — and 7 of the
-    // 44 answerable fixture queries hit one as their TOP row (`insomnia
-    // help`, `home workout`, `goal setting`, `public speaking`, `investing
-    // basics`, `tax filing personal`, `home organization`). They rank on the
-    // skill NAME alone, which is exactly how a name-shaped match reaches a
-    // high relevance with no evidence behind it.
-    //
-    // The index is synthetic because the combination cannot be staged from
-    // the snapshot: those seven queries all land in the borderline band
-    // there, and it is the larger live index that pushes them up. The
-    // mechanism is the same either way — a description of `>` and a `Likely
-    // fit` cue above a ready-made question.
-    const home = freshHome("find-band-ask-blank");
+  it("just above the threshold asks; just below it, silence — same rows, same index", async () => {
+    // The boundary itself, with the index held constant so only the query
+    // moves the number. The old middle band made this line soft: either side
+    // of 1.0 still produced a sentence to relay and the difference was a word
+    // of hedging. The two sides now print different KINDS of line, so a
+    // threshold that drifts by a hundredth changes what the model does.
+    const home = freshHome("find-zone-edge");
+    const idx = bandIndex(home);
+    const above = await runCli(["find", "snorklex processor zorbulon", "--index", idx], { home });
+    const below = await runCli(["find", "snorklex zorbulon", "--index", idx], { home });
+    const relAbove = topRelevance(above.stdout, "someorg/repo@snorklex");
+    const relBelow = topRelevance(below.stdout, "someorg/repo@snorklex");
+    // 0.61 and 0.53 — one on each side of 0.55, four hundredths apart.
+    expect(relAbove).toBeGreaterThanOrEqual(MIN_ASK_RELEVANCE);
+    expect(relBelow).toBeLessThan(MIN_ASK_RELEVANCE);
+    expect(verdictLines(above.stdout)[0]).toMatch(/^Likely fit \(relevance 0\.61\)/);
+    expect(above.stdout.split("\n").filter((l) => l.startsWith("Ask the user:"))).toHaveLength(1);
+    expect(above.stdout).toContain("Install only on the user's explicit yes:");
+    expect(verdictLines(below.stdout)).toEqual([
+      "Weak matches only (top relevance 0.53) — solve the task yourself, silently.",
+    ]);
+    expect(below.stdout.split("\n").filter((l) => l.startsWith("Ask the user:"))).toEqual([]);
+    expect(below.stdout).not.toContain("Install only on the user's explicit yes:");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("steps past an unreadable top row to the next readable one above the line", async () => {
+    // The measured case, not a hypothetical. `linkedin outreach prospecting`
+    // — one of the five real 2026-09-04 queries — ranks a registry row with
+    // NO description first (0.66; 129 of the snapshot's 4,835 records are
+    // such rows, sources that report installs and nothing else), with a
+    // genuine match directly beneath it. The unreadable row used to silence
+    // the whole query: the cue said "nothing here can confirm the fit" while
+    // a readable, askable, above-threshold row sat printed and unmentioned
+    // one line below. The check is about ONE row's evidence, so it retires
+    // that row, not the lookup.
+    const home = freshHome("find-zone-fallback");
+    const idx = writeIndex(home, [
+      rec({ name: "snorklex", source: "someorg/repo", pkg: "someorg/repo@snorklex", description: ">", installs: 42 }),
+      rec({ name: "snorklex-helper", source: "acme/tools", pkg: "acme/tools@snorklex-helper",
+            description: "Snorklex processing helper: snorklex jobs and snorklex pipelines.", installs: 20 }),
+    ]);
+    const r = await runCli(["find", "snorklex", "--index", idx], { home });
+    const skippedRel = topRelevance(r.stdout, "someorg/repo@snorklex");
+    const askedRel = topRelevance(r.stdout, "acme/tools@snorklex-helper");
+    expect(skippedRel).toBeGreaterThan(askedRel);
+    expect(askedRel).toBeGreaterThanOrEqual(MIN_ASK_RELEVANCE);
+    // The cue is about the row the question names, and says in one clause why
+    // the higher row is not that row — a question about the second row under
+    // a higher-scoring first row reads as a bug unless the output says why.
+    expect(verdictLines(r.stdout)).toEqual([
+      `Likely fit (relevance ${askedRel.toFixed(2)}) — someorg/repo@snorklex ranked higher ` +
+        `(${skippedRel.toFixed(2)}) but its description is blank or a bare mark (\`>\`, \`|\`), so this question is ` +
+        "about the next row down — read the row's description first: if it fits the task, ask the question below, " +
+        "first, via the tool if you have it; if it is a different thing with the same word, say nothing and solve " +
+        "the task; if the description is blank or a bare mark (`>`, `|`), you cannot confirm the fit — say nothing " +
+        "and solve the task.",
+      "Ask the user: Install acme/tools@snorklex-helper (20 installs, publisher acme, scan clean) for this task? yes/no",
+    ]);
+    // ...and the install command names the row the question named, never the
+    // one it stepped over. Rule 1 of SKILL.md is "run the command as
+    // printed"; printing the wrong package here is how the wrong skill lands.
+    expect(r.stdout).toContain(
+      `Install only on the user's explicit yes: "${process.execPath}" "${CLI}" install acme/tools@snorklex-helper --force`,
+    );
+    expect(r.stdout).not.toContain(" install someorg/repo@snorklex --force");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("with nothing readable above the line: the cue says an unconfirmable fit is not one", async () => {
+    // 129 of the regenerated snapshot's 4,835 records carry no description at
+    // all. They rank on the skill NAME alone, which is exactly how a
+    // name-shaped match reaches a high relevance with no evidence behind it.
+    // When there is no readable row under such a top row either, the fallback
+    // has nothing to fall to, and this is what prints.
+    const home = freshHome("find-zone-blank");
     const idx = writeIndex(home, [
       rec({ name: "snorklex", source: "someorg/repo", pkg: "someorg/repo@snorklex", description: ">", installs: 42 }),
       rec({ name: "widget-press", source: "acme/tools", pkg: "acme/tools@widget-press",
             description: "Press widgets into shape.", installs: 20 }),
     ]);
     const r = await runCli(["find", "snorklex", "--index", idx], { home });
-    expect(topRelevance(r.stdout, "someorg/repo@snorklex")).toBeGreaterThanOrEqual(1);
+    expect(topRelevance(r.stdout, "someorg/repo@snorklex")).toBeGreaterThanOrEqual(MIN_ASK_RELEVANCE);
     // The row prints the mark it has, so the model can see there is nothing
     // to read...
     expect(r.stdout).toContain("someorg/repo@snorklex (42 installs, scan=clean, relevance=");
     // ...and the ONLY line under the rows says so, with no question and no
     // command beneath it. A cue ending "say nothing and solve the task" over
     // a free-standing `Ask the user: Install X?` is the shape that was cut
-    // from the weak band: the actionable line wins at reading speed, and the
+    // from the weak zone: the actionable line wins at reading speed, and the
     // stop instruction above it is decoration. A check that cannot be made
     // must not be followed by the sentence it was there to gate.
     expect(verdictLines(r.stdout)).toEqual([
@@ -540,95 +617,30 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  it("band >= 1.0 with an empty description: same silence, no question, no command", async () => {
+  it("an empty description reads the same as a bare mark: same silence, no question, no command", async () => {
     // The other half of the same defect. `""` and `>` reach the index by
-    // different routes — a missing key and a YAML block scalar the builder
-    // kept the marker of — and one regex covers both, in the one helper the
-    // cue text and this gate share.
-    const home = freshHome("find-band-ask-empty");
+    // different routes — a source that carries no description at all, and a
+    // YAML block scalar whose marker survived the parser — and one regex
+    // covers both, in the one helper the cue text and this gate share.
+    const home = freshHome("find-zone-empty");
     const idx = writeIndex(home, [
       rec({ name: "snorklex", source: "someorg/repo", pkg: "someorg/repo@snorklex", description: "", installs: 42 }),
       rec({ name: "widget-press", source: "acme/tools", pkg: "acme/tools@widget-press",
             description: "Press widgets into shape.", installs: 20 }),
     ]);
     const r = await runCli(["find", "snorklex", "--index", idx], { home });
-    expect(topRelevance(r.stdout, "someorg/repo@snorklex")).toBeGreaterThanOrEqual(1);
+    expect(topRelevance(r.stdout, "someorg/repo@snorklex")).toBeGreaterThanOrEqual(MIN_ASK_RELEVANCE);
     expect(verdictLines(r.stdout)[0]).toContain("nothing here can confirm the fit, so no question is printed.");
     expect(r.stdout.split("\n").filter((l) => l.startsWith("Ask the user:"))).toEqual([]);
     expect(r.stdout).not.toContain("Install only on the user's explicit yes:");
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  it("band 0.5-1.0: prints a judge-first cue, and no question", async () => {
-    const home = freshHome("find-band-mid");
-    const r = await runCli(["find", "snorklex zorbulon", "--index", bandIndex(home)], { home });
-    const rel = topRelevance(r.stdout, "someorg/repo@snorklex");
-    expect(rel).toBeGreaterThanOrEqual(0.5);
-    expect(rel).toBeLessThan(1);
-    // Judgement first, then the finished sentence. "before asking" was
-    // satisfied by a model that judged the row to fit and then asked at the
-    // end of an answer it had already given (0.85, second real v2 use), so
-    // the cue names when — first — and hands over the words, because the one
-    // band with no ready-made question is the band that failed. The
-    // `Ask the user:` label stays out of it: that label is bound to
-    // `relevance` >= 1.0 in all three documents, and printing it here would
-    // read as "relay this" exactly where the rule says "judge first".
-    expect(verdictLines(r.stdout)).toEqual([
-      "Borderline match (relevance 0.53) — judge whether someorg/repo@snorklex fits. " +
-        "If it does, ask exactly this, first — via the tool if you have it, else as one line and nothing else: " +
-        "Install someorg/repo@snorklex (42 installs, publisher someorg, scan clean) for this task? yes/no",
-    ]);
-    // The label belongs to the band above this one, and the header names all
-    // three bands, so this reads the printed lines, not the whole screen.
-    expect(r.stdout.split("\n").filter((l) => l.startsWith("Ask the user:"))).toEqual([]);
-    // ...and the row is still printed, with its number. Bands gate the
-    // action, never the list.
-    expect(r.stdout).toContain("someorg/repo@snorklex (42 installs, scan=clean, relevance=0.53)");
-    // The install line stays in this band — the cue ends in "then ask first"
-    // — and names the same package the cue does.
-    expect(r.stdout).toContain(
-      `Install only on the user's explicit yes: "${process.execPath}" "${CLI}" install someorg/repo@snorklex --force`,
-    );
-    fs.rmSync(home, { recursive: true, force: true });
-  });
-
-  it("borderline band with nothing to read: the same silence, no question, no command", async () => {
-    // The measured case, not a hypothetical: `insomnia help` scores 0.58
-    // against the shipped snapshot and its top row's description is a bare
-    // `>`. "Judge whether X fits" over a row with nothing to judge, followed
-    // by a ready-made question, is the >= 1.0 defect one band down — the band
-    // boundary is about how much of the query matched and says nothing about
-    // whether there is any evidence to read. Same helper, same sentence, only
-    // the label differs.
-    const home = freshHome("find-band-mid-blank");
-    const idx = writeIndex(home, [
-      rec({ name: "snorklex", source: "someorg/repo", pkg: "someorg/repo@snorklex", description: ">", installs: 42 }),
-      // Carries the query's other term once, so `zorbulon` is not a hapax
-      // whose idf would drag the top row under 0.5 — and stays far enough
-      // behind that the unreadable row is the one the band speaks about.
-      rec({ name: "widget-press", source: "acme/tools", pkg: "acme/tools@widget-press",
-            description: "Zorbulon widgets.", installs: 20 }),
-    ]);
-    const r = await runCli(["find", "snorklex zorbulon", "--index", idx], { home });
-    const rel = topRelevance(r.stdout, "someorg/repo@snorklex");
-    expect(rel).toBeGreaterThanOrEqual(0.5);
-    expect(rel).toBeLessThan(1);
-    expect(verdictLines(r.stdout)).toEqual([
-      `Borderline match (relevance ${rel.toFixed(2)}) — but someorg/repo@snorklex's description is blank or a bare ` +
-        "mark (`>`, `|`): nothing here can confirm the fit, so no question is printed. Say nothing and solve the task.",
-    ]);
-    expect(r.stdout).not.toContain("ask exactly this");
-    expect(r.stdout).not.toContain("for this task? yes/no");
-    expect(r.stdout).not.toContain("Install only on the user's explicit yes:");
-    expect(r.stdout).not.toContain("--force");
-    fs.rmSync(home, { recursive: true, force: true });
-  });
-
   it("README quotes the header find actually prints", async () => {
     // README's walkthrough pastes find's output verbatim, and nothing checked
     // it: the relevance-rule clause in the header could drift in either
-    // document — and did, the moment the borderline cue changed. Only the
-    // query differs between the sample and a real run, so only that is
+    // document — and did, the last two times that clause was reworded. Only
+    // the query differs between the sample and a real run, so only that is
     // substituted.
     const home = freshHome("readme-header");
     const r = await runCli(["find", "snorklex processor", "--index", bandIndex(home)], { home });
@@ -638,18 +650,16 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  it("band < 0.5: says solve it yourself, and no question", async () => {
-    const home = freshHome("find-band-weak");
+  it("below the threshold: says solve it yourself, and no question", async () => {
+    const home = freshHome("find-zone-weak");
     const r = await runCli(["find", "snorklex zorbulon flimscape", "--index", bandIndex(home)], { home });
-    expect(topRelevance(r.stdout, "someorg/repo@snorklex")).toBeLessThan(0.5);
+    expect(topRelevance(r.stdout, "someorg/repo@snorklex")).toBeLessThan(MIN_ASK_RELEVANCE);
     expect(verdictLines(r.stdout)).toEqual([
-      "Weak matches only (top relevance 0.31) — solve the task yourself.",
+      "Weak matches only (top relevance 0.31) — solve the task yourself, silently.",
     ]);
-    // No question in any form down here: neither the labelled one nor the
-    // bare sentence the borderline band hands over. (The header names every
-    // band, so the label is read off the printed lines, not the screen.)
+    // No question in any form down here. (The header names both outcomes, so
+    // the label is read off the printed lines, not the screen.)
     expect(r.stdout.split("\n").filter((l) => l.startsWith("Ask the user:"))).toEqual([]);
-    expect(r.stdout).not.toContain("ask exactly this");
     expect(r.stdout).not.toContain("for this task? yes/no");
     // ...and no install command under it. Left in place it was the only
     // actionable line on screen, one line below "solve the task yourself",
@@ -812,6 +822,87 @@ describe("find: everyday queries against the shipped snapshot (golden fixture)",
       pkg: search(index!, normaliseQuery(q.query), 5)[0]?.record.pkg ?? null,
     }));
     expect(actual).toEqual(fixture.queries.map((q) => ({ query: q.query, pkg: q.pkg })));
+  });
+});
+
+// The five capability phrases a real 2026-09-04 session typed into `find`.
+// They are the calibration set MIN_ASK_RELEVANCE was measured on, and this is
+// the test that says the measurement still holds end to end: every one of them
+// landed in the old 0.5-1.0 band and produced no question, and four of the
+// five deserved one. A threshold change, a ranking change, or a snapshot
+// refresh that moves any of them across the line shows up here.
+//
+// Through the CLI, not through search(), because what is under test is the
+// LINE the model reads: whether a question printed, and which package it
+// names — including the fallback, where the top row has no description and
+// the question is about the next readable row down.
+//
+// The snapshot is gitignored (built by `npm run snapshot` at publish time),
+// so this SKIPS rather than fails where it is absent.
+describe("find: the five real calibration queries against the shipped snapshot (golden fixture)", () => {
+  const SNAPSHOT = path.join(ROOT, "index-snapshot.json");
+  const fixture = JSON.parse(
+    fs.readFileSync(path.join(ROOT, "test", "fixtures", "calibration-queries.json"), "utf8"),
+  ) as {
+    note: string;
+    queries: {
+      query: string;
+      deserves: boolean;
+      relevance: number;
+      pkg: string;
+      outcome: "ask" | "silent";
+      asked: string | null;
+    }[];
+  };
+
+  it("records the measurement: five real queries, four of which deserved a question", () => {
+    // Not a behaviour of `src/` — it guards the fixture. Read a failure here
+    // as "the fixture was edited", never as "the product regressed". It is
+    // worth asserting anyway: 4-of-5 is the number that removed a whole band,
+    // and someone editing it down should have to mean it.
+    expect(fixture.queries).toHaveLength(5);
+    expect(fixture.queries.filter((q) => q.deserves)).toHaveLength(4);
+    // Every deserving one clears the threshold and the one that does not, does
+    // not — which is what "0.55" bought, stated as an assertion rather than a
+    // comment.
+    for (const q of fixture.queries) {
+      if (q.deserves) expect(q.relevance, q.query).toBeGreaterThanOrEqual(MIN_ASK_RELEVANCE);
+      else expect(q.relevance, q.query).toBeLessThan(MIN_ASK_RELEVANCE);
+      expect(q.outcome, q.query).toBe(q.deserves ? "ask" : "silent");
+    }
+  });
+
+  it("prints the recorded outcome for every one of them", async (ctx) => {
+    if (!fs.existsSync(SNAPSHOT)) {
+      ctx.skip(`${SNAPSHOT} is absent — run \`npm run snapshot\` to check calibration drift`);
+      return;
+    }
+    const home = freshHome("find-calibration");
+    for (const q of fixture.queries) {
+      const r = await runCli(["find", q.query, "--index", SNAPSHOT], { home });
+      expect(r.code, q.query).toBe(0);
+      // The row search() ranks first, whether or not it is the one asked about.
+      expect(r.stdout, q.query).toContain(`${q.pkg} (`);
+      expect(topRelevanceOf(r.stdout, q.pkg), q.query).toBeCloseTo(q.relevance, 2);
+      const asks = r.stdout.split("\n").filter((l) => l.startsWith("Ask the user:"));
+      if (q.outcome === "silent") {
+        expect(asks, q.query).toEqual([]);
+        expect(r.stdout, q.query).toContain("Weak matches only");
+        expect(r.stdout, q.query).not.toContain("Install only on the user's explicit yes:");
+        continue;
+      }
+      expect(asks, q.query).toHaveLength(1);
+      expect(asks[0], q.query).toContain(`Install ${q.asked} (`);
+      // ...and the install command names the same package the question does.
+      expect(r.stdout, q.query).toContain(` install ${q.asked} --force --matched "${q.query}"`);
+      // The fallback, stated: when the question is about a row other than the
+      // top one, the line says which row it stepped over and why.
+      if (q.asked !== q.pkg) {
+        expect(r.stdout, q.query).toContain(`${q.pkg} ranked higher (`);
+        expect(r.stdout, q.query).toContain("so this question is about the next row down");
+      }
+    }
+    fs.rmSync(home, { recursive: true, force: true });
   });
 });
 

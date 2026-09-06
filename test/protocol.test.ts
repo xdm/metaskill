@@ -1,12 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { RELEVANCE_BANDS } from "../src/index/read.js";
+import { MIN_ASK_RELEVANCE } from "../src/index/read.js";
 import { cliEntryPath } from "../src/paths.js";
 import { protocolText } from "../src/protocol.js";
 
 const FIND_SRC = fs.readFileSync(path.resolve(__dirname, "..", "src", "commands", "find.ts"), "utf8");
 const SKILL_MD = fs.readFileSync(path.resolve(__dirname, "..", "skills", "metaskill", "SKILL.md"), "utf8");
+const README = fs.readFileSync(path.resolve(__dirname, "..", "README.md"), "utf8");
 
 // The protocol is hard-wrapped, so a phrase assertion has to survive a line
 // break falling in the middle of it. Only the line-shape test reads the
@@ -84,7 +85,6 @@ describe("protocolText", () => {
       // The block tells the model to act on whichever one appears, so the
       // labels have to be the ones that actually reach the screen.
       "Ask the user:",
-      "Borderline match",
       // Named in the block as well as in SKILL.md, so renaming it in find.ts
       // fails the block's cross-check too, not only the reference's.
       "Weak matches only",
@@ -148,43 +148,67 @@ describe("protocolText", () => {
     expect(t).toMatch(/decline it/i);
   });
 
-  it("states when to ask as a rule with numbers, not as a judgement call", () => {
-    // The judgement it replaces — "judge which row, if any, fits the task; if
+  it("states when to ask as a rule with a number, not as a call the model makes", () => {
+    // The discretion it replaces — "judge which row, if any, fits the task; if
     // none does, solve it yourself" — is a slot the model fills with its own
     // prior, and on first real use it filled it with "none": five ask rows, a
     // 1.16-relevance top row that plainly fitted, and no question asked. A
     // reader who has to decide whether to ask has already been given the
-    // option not to. Bands, not discretion: the numbers come from the
-    // measured distributions (see src/protocol.ts).
+    // option not to. A measured threshold, not discretion (see read.ts).
     const t = flat();
-    expect(t).toMatch(/`relevance` >= 1\.0/);
-    expect(t).toMatch(/0\.5/);
+    expect(t).toMatch(/`relevance` >= 0\.55/);
     expect(t).not.toMatch(/judge which row/i);
     expect(t).not.toMatch(/if none does, solve it yourself/i);
   });
 
-  it("makes the >= 1.0 band read the row's description before it relays anything", () => {
-    // A 47-query probe of everyday life and work phrases against the live
-    // index put 26 of them in the >= 1.0 band, and many of those top rows are
-    // homonyms BM25 cannot see: "insomnia help" -> insomnia-collection-
-    // generator (a REST client, 1.28), "stress management" -> stress-test
-    // (load testing, 1.20), "time management" -> itinerary-optimizer,
-    // "language learning" -> vision-sft. A rare query word carries high idf,
-    // so the wrong sense of it scores HIGH — and the old rule ("put that
-    // question to the user before anything else") mandated asking "Install
-    // insomnia-collection-generator?" on a sleep question.
+  it("carries TWO zones — no middle band, and no word for one", () => {
+    // The last judgement slot. `Borderline match` (0.5-1.0) said "decide
+    // whether it fits, then ask", and on 2026-09-04 all five of the user's
+    // real `find` calls landed in it and produced no question; four deserved
+    // one. Three review rounds said the same thing: a slot that permits
+    // skipping is used to skip. It is gone from the code, and the word for it
+    // has to be gone from every document the model reads, or the rule the
+    // model follows is whichever copy it happens to have.
+    for (const [name, doc] of [
+      ["protocol", protocolText()],
+      ["find.ts", FIND_SRC],
+      ["SKILL.md", SKILL_MD],
+      ["README", README],
+    ] as const) {
+      expect(doc, `${name} must not say "judge" in any form`).not.toMatch(/judg/i);
+      expect(doc, `${name} must not name a borderline band`).not.toMatch(/borderline/i);
+    }
+    // ...and the two remaining outcomes are still both named, in all of them.
+    for (const [name, doc] of [
+      ["protocol", protocolText()],
+      ["find.ts", FIND_SRC],
+      ["SKILL.md", SKILL_MD],
+      ["README", README],
+    ] as const) {
+      expect(doc, `${name} names the asking outcome`).toContain("Ask the user:");
+      expect(doc, `${name} names the silent outcome`).toContain("Weak matches only");
+    }
+  });
+
+  it("makes the asking zone read the row's description before it relays anything", () => {
+    // A 52-query probe (47 everyday phrases + the five real ones) against the
+    // snapshot: 72% of the rows that clear the threshold do NOT deserve a
+    // question, and they are homonyms BM25 cannot see — "insomnia help" -> a
+    // REST client called Insomnia, "stress management" -> stress-test (load
+    // testing), "time management" -> a scheduler component. A rare query word
+    // carries high idf, so the wrong sense of it scores HIGH, which is why no
+    // threshold can catch them and this check has to.
     //
-    // The fix is not to hand back the judgement the bands took away: what
-    // stopped the first incident was the ready-made sentence, "ask first",
-    // and the closed escape hatch. It is ONE specific check the model can
-    // actually make and the score cannot — does the printed description
+    // The fix is not to hand back the discretion the threshold took away:
+    // what stopped the first incident was the ready-made sentence, "ask
+    // first", and the closed escape hatch. It is ONE specific check the model
+    // can actually make and the score cannot — does the printed description
     // describe this task? — with both outcomes named, so neither is a slot
     // for "I've got this".
     const t = flat();
     expect(t).not.toMatch(/before anything else/i);
-    expect(t).toMatch(/likely fit/i);
     expect(t).toContain("read the row's description");
-    // ...and the band still ends in an ask, not in a free choice.
+    // ...and the zone still ends in an ask, not in a free choice.
     expect(t).toMatch(/ask it first/i);
     // The same check, in the two documents the model reads in the decision
     // turn and afterwards. find.ts's copy is the one on screen when it acts —
@@ -193,36 +217,26 @@ describe("protocolText", () => {
     // line mutated to anything at all. The cue's own fuller phrase is what
     // pins the site the model reads under the rows.
     expect(FIND_SRC, "find.ts states the description check").toContain("read the row's description");
-    expect(FIND_SRC, "the >= 1.0 CUE states it, not only the header").toContain(
+    expect(FIND_SRC, "the CUE states it, not only the header").toContain(
       "— read the row's description first:",
     );
-    // The rows this lands on are not always readable: 900 of the shipped
-    // snapshot's 4,831 records have a description that is blank or a bare
-    // YAML block mark, and 7 of the 44 answerable fixture queries hit one as
-    // their top row. "Fits" and "a different thing with the same word" both
-    // assume text, so the cue names the third case and resolves it the way
-    // silence always resolves here.
+    // The rows this lands on are not always readable: 129 of the snapshot's
+    // 4,835 records carry no description at all. "Fits" and "a different
+    // thing with the same word" both assume text, so the cue names the third
+    // case and resolves it the way silence always resolves here.
     expect(FIND_SRC, "the cue covers a description it cannot read").toContain(
       "if the description is blank or a bare mark",
     );
-    // ...and where it cannot be read at all, the cue says so INSTEAD of the
-    // question: a stop instruction with a ready-made `Ask the user:` line
-    // under it is the shape ruling 44 removed from the weak band. One helper
-    // decides both the sentence and the suppression, so they cannot drift.
+    // ...and where nothing above the line can be read, the cue says so
+    // INSTEAD of the question: a stop instruction with a ready-made
+    // `Ask the user:` line under it is the shape ruling 44 removed from the
+    // weak zone. One helper decides both the sentence and the suppression, so
+    // they cannot drift.
     expect(FIND_SRC, "the unreadable case prints no question").toContain("so no question is printed");
     expect(FIND_SRC, "one helper decides it").toContain("function descriptionUnreadable(");
     expect(SKILL_MD.replace(/\s+/g, " "), "SKILL.md covers it too").toContain(
       "description is blank or a bare `>` or `|`",
     );
-    // ...for BOTH asking bands. `Borderline match` hands over a ready
-    // question after "judge whether X fits", which on a row described by `>`
-    // asks the model to judge from nothing — measured: `insomnia help` is
-    // 0.58 against the snapshot with exactly that row on top. So the rule
-    // lives in the paragraph that defines asking, not inside one band.
-    expect(SKILL_MD.replace(/\s+/g, " "), "SKILL.md scopes it to both bands").toContain(
-      "Neither asking band asks about a row",
-    );
-    expect(FIND_SRC, "one cue serves both bands").toContain('unreadableCue("Borderline match"');
     expect(SKILL_MD.replace(/\s+/g, " "), "SKILL.md says the question is conditional").toContain(
       "no question is printed for a row you cannot check",
     );
@@ -231,12 +245,33 @@ describe("protocolText", () => {
     );
     // The homonym itself is named in the two documents with room for it —
     // find.ts's cue is what the model has on screen in the turn it decides,
-    // and SKILL.md is the reference. The injected block carries the rule in
-    // its shortest true form ("else say nothing"): it is budgeted per
-    // session, and the gloss is the first thing that has to give.
+    // and SKILL.md is the reference.
     for (const doc of [FIND_SRC.replace(/\s+/g, " "), SKILL_MD.replace(/\s+/g, " ")]) {
       expect(doc).toContain("a different thing with the same word");
     }
+  });
+
+  it("falls to the next readable row instead of silencing the query", () => {
+    // Measured on the regenerated snapshot: `linkedin outreach prospecting`
+    // ranks code.deepline.com@portfolio-prospecting first at 0.66 with NO
+    // description — one of 129 registry rows that report installs and nothing
+    // else — with a readable, askable, above-threshold match directly
+    // beneath it. Before the fallback the unreadable row silenced the whole
+    // query. The check that suppresses a question is about ONE row's
+    // evidence, so it must retire that row, not the lookup.
+    expect(FIND_SRC, "find.ts picks the first readable askable row").toContain(
+      "const asked = askableAtT.find((x) => !descriptionUnreadable(x.r.description));",
+    );
+    // ...and says so on screen, in one clause, or a question about the second
+    // row under a higher-scoring first row reads as a bug.
+    expect(FIND_SRC, "the cue names the row it stepped over").toContain("ranked higher (");
+    expect(FIND_SRC, "the cue says why it stepped over it").toContain("so this question is about the next row down");
+    // The install command names the row the question names, never the one it
+    // skipped.
+    expect(FIND_SRC, "the install line follows the question").toContain("install ${asked.r.pkg} --force");
+    expect(SKILL_MD.replace(/\s+/g, " "), "SKILL.md documents the fallback").toContain(
+      "the question names THAT row and the line says which it stepped over",
+    );
   });
 
   it("names life and work domains, not only IT, when it says what to query for", () => {
@@ -250,18 +285,17 @@ describe("protocolText", () => {
     }
   });
 
-  it("puts the ask before any task work, in BOTH asking bands", () => {
-    // Second real v2 use: a borderline row at 0.85, judged to fit, and the
+  it("puts the ask before any task work", () => {
+    // Second real v2 use: a row at 0.85, correctly read as fitting, and the
     // question arrived as the last line of a paragraph that had already
     // started answering the task — so the user never experienced it as a
-    // question. The band text was the reason: only `>= 1.0` said "before
-    // anything else"; `Borderline match` said "judge, then ask", which is
-    // satisfied by asking at the end of an answer.
+    // question. The middle band's text was the reason: it said "decide, then
+    // ask", which is satisfied by asking at the end of an answer. The band is
+    // gone and the rule says FIRST wherever it is stated.
     const t = flat();
     expect(t).toMatch(/before (you )?(start|begin|do) (the task|anything)/i);
     expect(t).toMatch(/not inside an answer/i);
-    expect(t).toMatch(/`Borderline match` — judge whether it fits, then ask first/);
-    expect(t).not.toMatch(/`Borderline match` — judge, then ask;/);
+    expect(t).toMatch(/else ask it FIRST/);
   });
 
   it("names the AskUserQuestion tool as the way to ask, with a text fallback", () => {
@@ -282,56 +316,51 @@ describe("protocolText", () => {
     expect(t).toMatch(/one line of text and nothing else/i);
   });
 
-  it("says 'then ask first' in find.ts's own header too, not only here", () => {
+  it("says ask-FIRST in find.ts's own header too, not only here", () => {
     // The header is the first sentence of the tool result — the copy of this
     // rule the model reads IN the decision turn, above everything the block
-    // says. It could be reverted to "then ask" with every test still green:
-    // the cross-check pinned find.ts's LABELS and never the clause. Now the
-    // two documents share one substring or this fails.
-    const clause = "judge whether it fits, then ask first";
-    expect(flat(), `protocol says "${clause}"`).toContain(clause);
-    expect(FIND_SRC, `find.ts's header says "${clause}"`).toContain(clause);
+    // says. The clause could be softened there with every test still green:
+    // the cross-check pinned find.ts's LABELS and never the timing. Both
+    // documents carry it or this fails.
+    expect(flat(), "protocol says ask it FIRST").toContain("else ask it FIRST");
+    expect(FIND_SRC, "find.ts's header says ask FIRST").toContain("otherwise ask that question FIRST, before any work");
   });
 
-  it("hands the borderline band a sentence, in the words all three documents use", () => {
+  it("hands the asking zone a finished sentence, labelled the one way", () => {
     // The band that failed is the one that had no ready-made question: at
-    // 0.85 the model judged correctly and then had to compose one. `find`
-    // now prints it after the cue — WITHOUT the `Ask the user:` label, which
-    // stays bound to >= 1.0 (see the label cross-check above).
-    //
-    // "and nothing else" was true of the text fallback and false of the tool
-    // path, which necessarily splits the sentence into an option label and a
-    // description — an instruction the model cannot obey with the tool the
-    // protocol tells it to prefer. The cue now names both ways of asking, in
-    // the same order the block does.
-    const phrase = "ask exactly this, first — via the tool if you have it, else as one line and nothing else";
-    expect(FIND_SRC, `find.ts prints "${phrase}"`).toContain(phrase);
-    expect(SKILL_MD.replace(/\s+/g, " "), `SKILL.md quotes "${phrase}"`).toContain(phrase);
+    // 0.85 the model read the row correctly and then had to compose one, and
+    // what it composed arrived as the last line of an answer already begun.
+    // There is now exactly one asking outcome and one label on it — every
+    // question `find` prints is an `Ask the user:` line.
+    expect(FIND_SRC, "one question builder").toContain("function questionLine(");
+    expect(FIND_SRC, "labelled `Ask the user:`").toContain("return `Ask the user: Install ${pkg}");
+    expect(FIND_SRC, "the label-less second form is gone").not.toContain("function questionSentence(");
     expect(FIND_SRC, "the old absolute wording is gone").not.toContain("ask exactly this, first, and nothing else");
-    // `Borderline match` appears in the header too, so pin the verdict line
-    // itself — the interpolated package is what makes this string unique to
-    // the cue printed under the rows.
-    expect(FIND_SRC, "the borderline CUE still judges before it asks").toContain(
-      "judge whether ${topAsk.r.pkg} fits.",
-    );
   });
 
-  it("quotes the same two numbers find.ts bands on", () => {
-    // The bands are enforced in code (read.ts's RELEVANCE_BANDS, applied by
-    // find.ts) and described here. Two copies of a number drift; this fails
-    // the moment they do, so the constant is the single source and the text
-    // is checked against it.
-    const t = flat();
-    expect(t).toContain(`\`relevance\` >= ${RELEVANCE_BANDS.ask.toFixed(1)}`);
-    expect(t).toContain(`under ${RELEVANCE_BANDS.judge.toFixed(1)}`);
-    expect(RELEVANCE_BANDS.ask).toBeGreaterThan(RELEVANCE_BANDS.judge);
+  it("quotes the very number find.ts thresholds on", () => {
+    // The threshold is enforced in code (read.ts's MIN_ASK_RELEVANCE, applied
+    // by find.ts) and described here. Two copies of a number drift; this
+    // fails the moment they do, so the constant is the single source and the
+    // text is checked against it — in every document, including the one
+    // find.ts prints at the top of its own output.
+    expect(flat()).toContain(`\`relevance\` >= ${MIN_ASK_RELEVANCE.toFixed(2)}`);
+    expect(flat()).toContain(`under ${MIN_ASK_RELEVANCE.toFixed(2)}`);
+    expect(SKILL_MD.replace(/\s+/g, " ")).toContain(`\`relevance\` >= ${MIN_ASK_RELEVANCE.toFixed(2)}`);
+    expect(SKILL_MD.replace(/\s+/g, " ")).toContain(`under ${MIN_ASK_RELEVANCE.toFixed(2)}`);
+    expect(README).toContain(`relevance >= ${MIN_ASK_RELEVANCE.toFixed(2)}`);
+    // ...and find.ts interpolates it rather than typing it, so the printed
+    // header cannot drift from the constant at all.
+    expect(FIND_SRC).toContain("${MIN_ASK_RELEVANCE.toFixed(2)}");
+    expect(MIN_ASK_RELEVANCE).toBeGreaterThan(0);
+    expect(MIN_ASK_RELEVANCE).toBeLessThan(1);
   });
 
-  it("leaves no judgement in find.ts's own header either", () => {
-    // The block dropped "judge which row, if any, fits the task" — but the
-    // same sentence opened find's output, which the model reads IN the
-    // decision turn, above everything this block says. Removing it from one
-    // document and leaving it in the other changes nothing.
+  it("leaves nothing for find.ts's own header to adjudicate either", () => {
+    // The block dropped "which row, if any, fits the task" — but the same
+    // sentence opened find's output, which the model reads IN the decision
+    // turn, above everything this block says. Removing it from one document
+    // and leaving it in the other changes nothing.
     expect(FIND_SRC).not.toContain("Judge whether one of these actually fits");
     expect(FIND_SRC).not.toContain("if none does, solve it yourself");
     expect(FIND_SRC).not.toContain("ask the user ONE question");
@@ -392,7 +421,6 @@ describe("skills/metaskill/SKILL.md", () => {
       "Registry did not answer",
       "No skills found",
       "Ask the user:",
-      "Borderline match",
       "Weak matches only",
     ]) {
       expect(SKILL_MD, `SKILL.md names "${label}"`).toContain(label);
@@ -410,12 +438,10 @@ describe("skills/metaskill/SKILL.md", () => {
     // description first (see the band test above), because a homonym scores
     // high exactly when its shared word is rare. What replaces it is a
     // check, not a discretion — the band still ends in an ask.
-    for (const re of [/`relevance` >= 1\.0/, /likely fit/i, /read the row's description/, /0\.5/]) {
+    for (const re of [/`relevance` >= 0\.55/, /read the row's description/, /0\.55/]) {
       expect(flatMd, `SKILL.md matches ${re}`).toMatch(re);
       expect(protocolText().replace(/\s+/g, " "), `protocol matches ${re}`).toMatch(re);
     }
-    expect(flatMd).toContain(`\`relevance\` >= ${RELEVANCE_BANDS.ask.toFixed(1)}`);
-    expect(flatMd).toContain(`under ${RELEVANCE_BANDS.judge.toFixed(1)}`);
     expect(flatMd).not.toMatch(/decide which row/i);
     // The permission the bands replace: "a signal for your judgement, not a
     // verdict" sat three lines above the rule and gave back what it takes.
@@ -442,8 +468,8 @@ describe("skills/metaskill/SKILL.md", () => {
       expect(flatMd, `SKILL.md matches ${re}`).toMatch(re);
       expect(protocolText().replace(/\s+/g, " "), `protocol matches ${re}`).toMatch(re);
     }
-    // The borderline band asks too, and asks first — not "only if it does".
-    expect(flatMd).toMatch(/`Borderline match`.{0,220}\bfirst\b/);
+    // ...and the one asking outcome asks FIRST, not at the end of an answer.
+    expect(flatMd).toMatch(/`Ask the user: Install \.\.\. \? yes\/no`.{0,220}\bfirst\b/);
   });
 
   it("covers every branch the protocol block covers", () => {

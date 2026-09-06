@@ -1,5 +1,5 @@
 {
-  "note": "Everyday life/work queries, each with the top pkg search() returns against the PACKAGED SNAPSHOT (index-snapshot.json). Regenerate after a snapshot refresh; `homonym` is hand-set — true means the top row is plainly a different thing that happens to share a word with the query.",
+  "note": "Everyday life/work queries, each with the top pkg search() returns against the PACKAGED SNAPSHOT (index-snapshot.json). Regenerate after a snapshot refresh. `homonym` is hand-set and means the top row does NOT deserve a question: usually a different thing that happens to share a word with the query, but also a same-domain near-miss that answers a different need (`resume writing` -> resume-version-manager, which manages versions rather than writing one; `linkedin profile` -> linkedin-posts, which writes posts rather than profiles). Together with test/fixtures/calibration-queries.json these 47 rows are the set MIN_ASK_RELEVANCE was measured on.",
   "queries": [
     {
       "query": "nutrition meal planning",
@@ -129,7 +129,7 @@
     {
       "query": "resume writing",
       "pkg": "paramchoudhary/resumeskills@resume-version-manager",
-      "homonym": false
+      "homonym": true
     },
     {
       "query": "job interview prep",
@@ -149,7 +149,7 @@
     {
       "query": "linkedin profile",
       "pkg": "kostja94/marketing-skills@linkedin-posts",
-      "homonym": false
+      "homonym": true
     },
     {
       "query": "personal finance budgeting",
