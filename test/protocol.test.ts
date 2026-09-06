@@ -284,6 +284,41 @@ describe("protocolText", () => {
     );
   });
 
+  it("gates the policy line on the same check, and records the phrase that found the row", () => {
+    // With `trust.auto_install: true` the top row comes back `auto` and there
+    // is no question to gate — but the check the question was gated on is the
+    // only thing between a homonym and an install nobody watches. `decide()`
+    // reads a publisher, an install count and a scan verdict; not one of them
+    // can see that `insomnia` is a REST client, and 72% of the rows above the
+    // threshold are that kind of row. So the same cue prints above the
+    // command, ending in the same silence, with "run nothing" for "ask".
+    expect(FIND_SRC, "the policy line has its own cue").toContain("const autoCue = (rel: number): string =>");
+    expect(FIND_SRC, "the cue prints ABOVE the command").toContain("autoCue(chosen.rel) + autoLine(chosen)");
+    expect(FIND_SRC, "the cue names the homonym and says to run nothing").toContain(
+      "if it is a different thing with the same word, run nothing, say nothing ",
+    );
+    // One gate for both lines: the row the command names is the first
+    // READABLE row above the threshold, and where there is none, `chosen` is
+    // undefined and the unreadable cue prints in place of the command.
+    expect(FIND_SRC, "one readable-row gate").toContain(
+      "const chosen = atT.find((x) => !descriptionUnreadable(x.r.description));",
+    );
+    expect(FIND_SRC, "the policy line says which row it stepped over").toContain(
+      "so the command below is about the next row down",
+    );
+    // ...and the command carries the phrase that found the row, exactly as
+    // the question's command does. Without it an auto install records no
+    // phrase: `metaskill list`'s MATCHED column stays empty for it, and
+    // alreadyPresent's lock short-circuit never fires for precisely the
+    // installs that happened with nobody watching.
+    expect(FIND_SRC, "the policy command records what matched").toContain(
+      'install ${x.r.pkg} --matched "${q}"',
+    );
+    expect(SKILL_MD.replace(/\s+/g, " "), "SKILL.md carries the same gate").toContain(
+      "no question to put, but the same check: read the row's description",
+    );
+  });
+
   it("names life and work domains, not only IT, when it says what to query for", () => {
     // The same probe: a block whose only examples are formats, frameworks and
     // "a craft like SEO" tells a model that `find` is for engineering tasks,

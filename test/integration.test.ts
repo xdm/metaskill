@@ -316,16 +316,35 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     expect(r.stdout).toContain("[auto: publisher anthropics is allowlisted, scan clean]");
     expect(r.stdout).not.toContain("auto-install is off");
     expect(r.stdout).not.toContain("Installed now:");
-    // ONE line under the rows, naming the concrete package. An `auto` row
-    // needs no question by definition — so there is none — but for a while
-    // this case printed NOTHING under a header promising that the line under
-    // the rows decides, which is how a model ends up deciding for itself.
-    // What was removed then was a command reading `install <pkg> --force`: a
-    // placeholder SKILL.md Rule 1 ("run it as printed") cannot be obeyed
-    // with. This is the same command made concrete, and without `--force`,
-    // because that flag stands in for the yes the knob has already given.
-    expect(r.stdout).toContain(
-      `\nPolicy allows this without asking — run: "${process.execPath}" "${CLI}" install anthropics/skills@gizmo\n`,
+    // TWO lines under the rows, the same two shapes the asking zone prints:
+    // the check, then the thing to act on. An `auto` row needs no question by
+    // definition — so there is none — but for a while this case printed
+    // NOTHING under a header promising that the line under the rows decides,
+    // which is how a model ends up deciding for itself. What was removed then
+    // was a command reading `install <pkg> --force`: a placeholder SKILL.md
+    // Rule 1 ("run it as printed") cannot be obeyed with. This is the same
+    // command made concrete, and without `--force`, because that flag stands
+    // in for the yes the knob has already given.
+    //
+    // The cue above it is not decoration. The knob is a standing yes to the
+    // QUESTION; policy sees a publisher, an install count and a scan verdict,
+    // and none of them can see that `insomnia` is a REST client. Without this
+    // sentence the knob handed the model a command to run unattended for the
+    // 72% of above-threshold rows that deserve no question at all.
+    expect(verdictLines(r.stdout)).toEqual([
+      "Likely fit (relevance 1.33) — read the row's description first: if it fits the task, run the command below; " +
+        "if it is a different thing with the same word, run nothing, say nothing and solve the task.",
+      `Policy allows this without asking — run: "${process.execPath}" "${CLI}" install anthropics/skills@gizmo ` +
+        `--matched "gizmo automation"`,
+    ]);
+    // ...and `--matched` carries the phrase that found the row, exactly as the
+    // question's command does: an auto install that records nothing leaves
+    // `metaskill list`'s MATCHED column empty and never short-circuits the
+    // next `find` for the same phrase. It is the NORMALISED query — the same
+    // string this run searched on — not the raw argv.
+    const messy = await runCli(["find", "  Gizmo, AUTOMATION!! ", "--index", idx], { home });
+    expect(messy.stdout).toContain(
+      `Policy allows this without asking — run: "${process.execPath}" "${CLI}" install anthropics/skills@gizmo --matched "gizmo automation"\n`,
     );
     // The question's own command follows a question, so it stays absent...
     expect(r.stdout).not.toContain("Install only on the user's explicit yes:");
@@ -661,12 +680,46 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     const skippedRel = topRelevance(r.stdout, "anthropics/skills@snorklex");
     expect(skippedRel).toBeGreaterThan(topRelevance(r.stdout, "anthropics/skills@snorklex-helper"));
     expect(verdictLines(r.stdout)).toEqual([
-      `Policy allows this without asking — anthropics/skills@snorklex ranked higher (${skippedRel.toFixed(2)}) but ` +
-        "its description is blank or a bare mark (`>`, `|`), so this line is about the next row down — run: " +
-        `"${process.execPath}" "${CLI}" install anthropics/skills@snorklex-helper`,
+      `Likely fit (relevance ${topRelevance(r.stdout, "anthropics/skills@snorklex-helper").toFixed(2)}) — ` +
+        `anthropics/skills@snorklex ranked higher (${skippedRel.toFixed(2)}) but its description is blank or a bare ` +
+        "mark (`>`, `|`), so the command below is about the next row down — read the row's description first: if it " +
+        "fits the task, run the command below; if it is a different thing with the same word, run nothing, say " +
+        "nothing and solve the task.",
+      `Policy allows this without asking — run: "${process.execPath}" "${CLI}" ` +
+        `install anthropics/skills@snorklex-helper --matched "snorklex"`,
     ]);
     // The blank row is never the one the command names.
     expect(r.stdout).not.toContain(" install anthropics/skills@snorklex\n");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("with the knob on and nothing readable above the line: no command at all", async () => {
+    // The end of the same fallback, on the path that has no user in it. When
+    // every row above the threshold is one of the 129 description-less
+    // registry records, there is nothing to fall to — and what must NOT print
+    // then is the one line that would install a skill nobody can describe
+    // with nobody watching. Same sentence as the asking zone's, because it is
+    // the same fact: the fit cannot be confirmed, so nothing happens.
+    const home = autoHome("find-zone-auto-none");
+    const idx = writeIndex(home, [
+      rec({ name: "snorklex", source: "anthropics/skills", pkg: "anthropics/skills@snorklex",
+            description: ">", installs: 42 }),
+      rec({ name: "widget-press", source: "anthropics/skills", pkg: "anthropics/skills@widget-press",
+            description: "", installs: 20 }),
+    ]);
+    const r = await runCli(["find", "snorklex", "--index", idx], { home });
+    // Both rows really are `auto` — the knob is on and the publisher is
+    // allowlisted — so the silence below is the description check, not policy.
+    expect(r.stdout).toContain("[auto: publisher anthropics is allowlisted, scan clean]");
+    expect(topRelevance(r.stdout, "anthropics/skills@snorklex")).toBeGreaterThanOrEqual(MIN_ASK_RELEVANCE);
+    expect(verdictLines(r.stdout)).toEqual([
+      "Likely fit (relevance 1.18) — but anthropics/skills@snorklex's description is blank or a bare mark (`>`, " +
+        "`|`): nothing here can confirm the fit, so no question is printed. Say nothing and solve the task.",
+    ]);
+    // That list is exhaustive, so there is no policy line — and no install
+    // command of any kind under a sentence that says solve the task alone.
+    expect(r.stdout).not.toContain(" install anthropics/skills@");
+    expect(r.stdout).not.toContain("--matched");
     fs.rmSync(home, { recursive: true, force: true });
   });
 

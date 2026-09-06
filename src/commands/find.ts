@@ -356,7 +356,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       : "";
     const skipClauseAuto = skipped
       ? ` — ${skipped.r.pkg} ranked higher (${skipped.rel.toFixed(2)}) but its description is blank or a bare mark ` +
-        `(\`>\`, \`|\`), so this line is about the next row down`
+        `(\`>\`, \`|\`), so the command below is about the next row down`
       : "";
     // Two zones, and the only silence above the line is a check the model can
     // make and BM25 cannot.
@@ -413,8 +413,33 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     // row below the line, or one nobody can describe, is a junk match policy
     // happens to trust, and "install it unattended" is the one sentence this
     // command exists not to print.
+    //
+    // And a cue above it, in the shape the asking zone uses: the check on its
+    // own line, the actionable sentence under it. A readable description is
+    // only half of that check. `decide()` reads a publisher, an install count
+    // and a scan verdict, and not one of them can see that `insomnia` is a
+    // REST client — so the knob, which is a standing yes to the QUESTION
+    // ("install from this publisher without asking me each time"), was
+    // handing the model a command to run unattended for exactly the 72% of
+    // above-threshold rows that deserve no question at all. The ask zone's
+    // junk-install path, minus the user. The cue is the same sentence, ending
+    // in the same silence, with "run nothing" in place of "ask".
+    //
+    // The header's one-clause gloss of this label is deliberately unchanged:
+    // it says what the label means, six lines up, while the thing that has to
+    // be read before the command runs sits directly above the command — where
+    // the reader already is when it acts.
+    const autoCue = (rel: number): string =>
+      `Likely fit (relevance ${rel.toFixed(2)})${skipClauseAuto} — read the row's description first: if it fits ` +
+      `the task, run the command below; if it is a different thing with the same word, run nothing, say nothing ` +
+      `and solve the task.\n`;
     const autoLine = (x: (typeof askable)[number]): string =>
-      `Policy allows this without asking${skipClauseAuto} — run: ${metaskillCmd()} install ${x.r.pkg}\n`;
+      // `--matched "<q>"` carries the phrase that found the row into the lock,
+      // exactly as the question's command does. Without it an auto install
+      // records no phrase, `metaskill list` shows an empty MATCHED column for
+      // it, and alreadyPresent's lock short-circuit never fires for the very
+      // installs that happen with nobody watching.
+      `Policy allows this without asking — run: ${metaskillCmd()} install ${x.r.pkg} --matched "${q}"\n`;
     const verdictLine = !atT.length
       ? `Weak matches only (top relevance ${top.rel.toFixed(2)}) — solve the task yourself, silently.\n`
       : !chosen
@@ -422,7 +447,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
         : asked
           ? askCue(asked.rel) +
             `${questionLine(asked.r.pkg, installsLabel(asked.r), publisherOf(asked.r.pkg), asked.r.scan)}\n`
-          : autoLine(chosen);
+          : autoCue(chosen.rel) + autoLine(chosen);
     // Below the line there is nothing to install, so no install command is
     // printed. Left in place it was the only actionable line on screen, one
     // line under "solve the task yourself" and with exactly one askable

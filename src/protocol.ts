@@ -88,7 +88,13 @@ import { metaskillCmd } from "./paths.js";
 //     install command for that row (no `--force`: the knob IS the standing
 //     yes) and this line says to run it. One short line, because the printed
 //     line already carries the command and the row it names; the reference
-//     (SKILL.md) carries the rest.
+//     (SKILL.md) carries the rest. The description check binds that line too
+//     — policy reads a publisher, an install count and a scan verdict, none
+//     of which can see that `insomnia` is a REST client — but the words for
+//     it do not fit here (4 chars left, below), so they live where the model
+//     is when it acts: find.ts prints the same cue above the command as it
+//     prints above a question, and SKILL.md carries the long form. This
+//     bullet stays "run it" because the line it names now says when not to.
 //   - The threshold applies to `Top matches` only, and `live search found`
 //     gets its own line. A registry hit has no relevance to place — no ranked
 //     list to place it in — and it is always askable, so it always prints a

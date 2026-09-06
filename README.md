@@ -105,7 +105,12 @@ Install only on the user's explicit yes: "/Users/you/.nvm/versions/node/v24.17.0
    itself out of asking. Nothing installs without your explicit yes, with the
    command that line printed — unless you set `trust.auto_install: true`, and
    then a top row policy clears reads `Policy allows this without asking` and
-   the line names the install command to run.
+   the line names the install command to run. That line is gated the same way
+   the question is: the cue above it says to read the row's description first
+   and run nothing if it is a different thing with the same word, an
+   unreadable top row is stepped over the same way, and with nothing readable
+   above the line no command prints at all. The knob is your standing yes to
+   the question, not a waiver of the one check policy cannot make.
 
    0.55 is measured, not picked: on 52 queries (47 everyday phrases plus five
    real ones from a working session), it is the highest threshold that still
