@@ -345,19 +345,28 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     const asked = chosen && chosen.v.decision === "ask" ? chosen : undefined;
     // Named in the line when the fallback fires, because a line about the
     // second row under a list whose first row scores higher looks like a bug
-    // unless the output says why. One clause, not a paragraph — and one per
-    // outcome, written out rather than spliced from a shared head, because
-    // the asking line's clause ends in "this question" and the policy line
-    // asks nothing.
+    // unless the output says why. One clause, not a paragraph — and its tail
+    // is written out per outcome, because the asking line's clause ends in
+    // "this question" and the policy line asks nothing.
+    //
+    // It names how many rows it stepped over, not only the first. Unreadable
+    // rows arrive in runs — 129 of the snapshot's 4,835 records carry no
+    // description at all, and a source that reports installs and nothing else
+    // contributes several at a time — so with two or more of them above the
+    // chosen row, "the next row down" pointed at a package that is neither
+    // the one the question names nor the one the command installs. The row it
+    // points at is the next READABLE one, which is what the clause now says.
     const skipped = chosen && atT[0] !== chosen ? atT[0] : undefined;
-    const skipClause = skipped
-      ? ` — ${skipped.r.pkg} ranked higher (${skipped.rel.toFixed(2)}) but its description is blank or a bare mark ` +
-        `(\`>\`, \`|\`), so this question is about the next row down`
+    const skippedCount = chosen ? atT.indexOf(chosen) : 0;
+    const skipHead = skipped
+      ? skippedCount === 1
+        ? `${skipped.r.pkg} ranked higher (${skipped.rel.toFixed(2)}) but its description is blank or a bare mark ` +
+          `(\`>\`, \`|\`)`
+        : `${skippedCount} rows ranked higher, from ${skipped.r.pkg} (${skipped.rel.toFixed(2)}) down, but their ` +
+          `descriptions are blank or bare marks (\`>\`, \`|\`)`
       : "";
-    const skipClauseAuto = skipped
-      ? ` — ${skipped.r.pkg} ranked higher (${skipped.rel.toFixed(2)}) but its description is blank or a bare mark ` +
-        `(\`>\`, \`|\`), so the command below is about the next row down`
-      : "";
+    const skipClause = skipped ? ` — ${skipHead}, so this question is about the next readable row` : "";
+    const skipClauseAuto = skipped ? ` — ${skipHead}, so the command below is about the next readable row` : "";
     // Two zones, and the only silence above the line is a check the model can
     // make and BM25 cannot.
     //
@@ -425,10 +434,13 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     // junk-install path, minus the user. The cue is the same sentence, ending
     // in the same silence, with "run nothing" in place of "ask".
     //
-    // The header's one-clause gloss of this label is deliberately unchanged:
-    // it says what the label means, six lines up, while the thing that has to
-    // be read before the command runs sits directly above the command — where
-    // the reader already is when it acts.
+    // The header's one-clause gloss of this label carries the same order —
+    // "read that row's description, then run the command that line names" —
+    // because a reader who has met the header first has met an unconditional
+    // "run it" before it ever reaches this cue, and this is the one path that
+    // runs with nobody watching. The gloss says what the label means, six
+    // lines up; the check itself stays here, directly above the command,
+    // where the reader already is when it acts.
     const autoCue = (rel: number): string =>
       `Likely fit (relevance ${rel.toFixed(2)})${skipClauseAuto} — read the row's description first: if it fits ` +
       `the task, run the command below; if it is a different thing with the same word, run nothing, say nothing ` +
@@ -485,7 +497,8 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
         `that row's description; if it is a different thing with the same word, or has no description, say nothing and ` +
         `solve the task; otherwise ask that question FIRST, before any work; \`Weak matches only\` (under ` +
         `${MIN_ASK_RELEVANCE.toFixed(2)}) — solve the task yourself, silently; \`Policy allows this without asking\` ` +
-        `(you set \`trust.auto_install\`) — no question to put: run the command that line names.\n` +
+        `(you set \`trust.auto_install\`) — no question to put: read that row's description, then run the command ` +
+        `that line names.\n` +
         askable.map((x) => line(x.r, x.rel, x.v.decision, x.v.reason)).join("\n") +
         // The question first, then the command that is only valid once it has
         // been answered. --matched carries this exact (already-normalised)

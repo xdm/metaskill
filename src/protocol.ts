@@ -91,10 +91,15 @@ import { metaskillCmd } from "./paths.js";
 //     (SKILL.md) carries the rest. The description check binds that line too
 //     — policy reads a publisher, an install count and a scan verdict, none
 //     of which can see that `insomnia` is a REST client — but the words for
-//     it do not fit here (4 chars left, below), so they live where the model
-//     is when it acts: find.ts prints the same cue above the command as it
-//     prints above a question, and SKILL.md carries the long form. This
-//     bullet stays "run it" because the line it names now says when not to.
+//     it do not fit here, so they live where the model is when it acts:
+//     find.ts prints the same cue above the command as it prints above a
+//     question, and SKILL.md carries the long form. What this bullet does
+//     carry is the ORDER — "read, then run", not "run it". This block is
+//     read at session start, BEFORE any tool result, and this is the one
+//     path that runs unattended: a model that internalised "run it" here can
+//     act on the label alone, without ever reaching the cue that says when
+//     not to. Two words, and they buy the only sequencing the label can
+//     carry on its own.
 //   - The threshold applies to `Top matches` only, and `live search found`
 //     gets its own line. A registry hit has no relevance to place — no ranked
 //     list to place it in — and it is always askable, so it always prints a
@@ -178,17 +183,26 @@ import { metaskillCmd } from "./paths.js";
 // "in force for every task" -> "every task", "always English" -> "English",
 // "that check is its job" -> "checking is its job", "the line under the
 // rows" -> "the line under them", "pure chat is exempt" -> "pure chat
-// exempt", and "so decline it" -> "decline it". The homonym gloss ("a
-// different thing with the same word") did NOT fit here and lives in the two
-// unbudgeted documents instead — find.ts's cue, which the model reads in the
-// decision turn, and SKILL.md. This block keeps the rule in its shortest
-// true form: read the description, then ask or say nothing.
+// exempt", and "so decline it" -> "decline it". The homonym gloss is here in
+// its shortest form ("a different thing with the same word"); its worked
+// examples did not fit and live in the two unbudgeted documents — find.ts's
+// cue, which the model reads in the decision turn, and SKILL.md. This block
+// keeps the rule in its shortest true form: read the description, then ask
+// or say nothing.
 //
 // The `Policy allows this` line (33 chars with its indent and newline) was
-// paid for out of what those trades left over, and it spends nearly all of
-// it: the injected string is 1595 of 1600 and the prose 1375 of 1400.
-// Nothing further fits. The next line added here has to buy its space from a
-// sentence above it, and the two budget tests are what will say so.
+// paid for out of what those trades left over, and "read, then run" (8 more)
+// was paid for by dropping ", or no description" from the >= 0.55 bullet
+// (19). That clause guarded a line that cannot print: `find` picks the first
+// READABLE row at or above the threshold (find.ts's `chosen`, pinned by two
+// tests in test/protocol.test.ts), so an `Ask the user:` line never names a
+// row whose description is blank or a bare mark — that case prints its own
+// cue in place of the question, and find.ts and SKILL.md both spell it out
+// where the model is when it acts.
+//
+// That leaves the injected string at 1584 of 1600 and the prose at 1364 of
+// 1400. The next line added here has to buy its space from a sentence above
+// it the same way, and the two budget tests are what will say so.
 export function protocolText(): string {
   return [
     "[metaskill] Standing protocol — every task, this session.",
@@ -215,10 +229,10 @@ export function protocolText(): string {
     "- `Already present:` — follow that SKILL.md.",
     "- `Top matches` — the line under them decides. `Ask the user:`",
     "  (`relevance` >= 0.55) — read the row's description: a different thing",
-    "  with the same word, or no description, say nothing; else ask it FIRST.",
+    "  with the same word, say nothing; else ask it FIRST.",
     "  `Weak matches only` (under 0.55) — a low `relevance`: barely matched,",
     "  decline it in silence.",
-    "  `Policy allows this` — run it.",
+    "  `Policy allows this` — read, then run.",
     "- `live search found` — relay its question.",
     "- `Refused by policy` — never offer these.",
     "- `Registry did not answer` — not a miss; retry.",

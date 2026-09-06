@@ -616,7 +616,7 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     expect(verdictLines(r.stdout)).toEqual([
       `Likely fit (relevance ${askedRel.toFixed(2)}) — someorg/repo@snorklex ranked higher ` +
         `(${skippedRel.toFixed(2)}) but its description is blank or a bare mark (\`>\`, \`|\`), so this question is ` +
-        "about the next row down — read the row's description first: if it fits the task, ask the question below, " +
+        "about the next readable row — read the row's description first: if it fits the task, ask the question below, " +
         "first, via the tool if you have it; if it is a different thing with the same word, say nothing and solve " +
         "the task; if the description is blank or a bare mark (`>`, `|`), you cannot confirm the fit — say nothing " +
         "and solve the task.",
@@ -629,6 +629,53 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
       `Install only on the user's explicit yes: "${process.execPath}" "${CLI}" install acme/tools@snorklex-helper --force`,
     );
     expect(r.stdout).not.toContain(" install someorg/repo@snorklex --force");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("names how many rows it stepped over, so the clause matches the package it names", async () => {
+    // Description-less rows arrive in runs, not one at a time: 129 of the
+    // snapshot's 4,835 records carry none, and a source that reports installs
+    // and nothing else contributes several at once. With two of them above
+    // the chosen row the old clause named the first and said the question was
+    // about "the next row down" — which is the SECOND unreadable row, not the
+    // package the question and the install command actually name. The count
+    // and "the next readable row" make the sentence true of the row it
+    // introduces.
+    const home = freshHome("find-zone-fallback-2");
+    const idx = writeIndex(home, [
+      rec({ name: "snorklex", source: "someorg/repo", pkg: "someorg/repo@snorklex", description: ">", installs: 42 }),
+      rec({ name: "snorklex", source: "otherorg/repo", pkg: "otherorg/repo@snorklex", description: "", installs: 30 }),
+      rec({ name: "snorklex-helper", source: "acme/tools", pkg: "acme/tools@snorklex-helper",
+            description: "Snorklex processing helper: snorklex jobs and snorklex pipelines.", installs: 20 }),
+    ]);
+    const r = await runCli(["find", "snorklex", "--index", idx], { home });
+    // Rank order off the printed rows, not assumed: the two unreadable rows
+    // tie, and which of them prints first is the index's business, not this
+    // test's. What matters is that both are above the readable one and above
+    // the threshold, so both are stepped over.
+    const order = r.stdout.split("\n").filter((l) => /^ {2}\S+@/.test(l)).map((l) => l.trim().split(" ")[0]!);
+    expect(order.slice(0, 2).sort()).toEqual(["otherorg/repo@snorklex", "someorg/repo@snorklex"]);
+    expect(order[2]).toBe("acme/tools@snorklex-helper");
+    const askedRel = topRelevance(r.stdout, "acme/tools@snorklex-helper");
+    for (const pkg of order.slice(0, 2)) {
+      expect(topRelevance(r.stdout, pkg)).toBeGreaterThan(askedRel);
+      expect(topRelevance(r.stdout, pkg)).toBeGreaterThanOrEqual(MIN_ASK_RELEVANCE);
+    }
+    expect(askedRel).toBeGreaterThanOrEqual(MIN_ASK_RELEVANCE);
+    expect(verdictLines(r.stdout)).toEqual([
+      `Likely fit (relevance ${askedRel.toFixed(2)}) — 2 rows ranked higher, from ${order[0]} ` +
+        `(${topRelevance(r.stdout, order[0]!).toFixed(2)}) down, but their descriptions are blank or bare marks ` +
+        "(`>`, `|`), so this question is about the next readable row — read the row's description first: if it fits " +
+        "the task, ask the question below, first, via the tool if you have it; if it is a different thing with the " +
+        "same word, say nothing and solve the task; if the description is blank or a bare mark (`>`, `|`), you " +
+        "cannot confirm the fit — say nothing and solve the task.",
+      "Ask the user: Install acme/tools@snorklex-helper (20 installs, publisher acme, scan clean) for this task? yes/no",
+    ]);
+    // The old wording is gone from the output, not merely outnumbered by it.
+    expect(r.stdout).not.toContain("the next row down");
+    expect(r.stdout).toContain(
+      `Install only on the user's explicit yes: "${process.execPath}" "${CLI}" install acme/tools@snorklex-helper --force`,
+    );
     fs.rmSync(home, { recursive: true, force: true });
   });
 
@@ -682,9 +729,9 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     expect(verdictLines(r.stdout)).toEqual([
       `Likely fit (relevance ${topRelevance(r.stdout, "anthropics/skills@snorklex-helper").toFixed(2)}) — ` +
         `anthropics/skills@snorklex ranked higher (${skippedRel.toFixed(2)}) but its description is blank or a bare ` +
-        "mark (`>`, `|`), so the command below is about the next row down — read the row's description first: if it " +
-        "fits the task, run the command below; if it is a different thing with the same word, run nothing, say " +
-        "nothing and solve the task.",
+        "mark (`>`, `|`), so the command below is about the next readable row — read the row's description first: " +
+        "if it fits the task, run the command below; if it is a different thing with the same word, run nothing, " +
+        "say nothing and solve the task.",
       `Policy allows this without asking — run: "${process.execPath}" "${CLI}" ` +
         `install anthropics/skills@snorklex-helper --matched "snorklex"`,
     ]);
@@ -1039,7 +1086,7 @@ describe("find: the five real calibration queries against the shipped snapshot (
       // top one, the line says which row it stepped over and why.
       if (q.asked !== q.pkg) {
         expect(r.stdout, q.query).toContain(`${q.pkg} ranked higher (`);
-        expect(r.stdout, q.query).toContain("so this question is about the next row down");
+        expect(r.stdout, q.query).toContain("so this question is about the next readable row");
       }
     }
     fs.rmSync(home, { recursive: true, force: true });

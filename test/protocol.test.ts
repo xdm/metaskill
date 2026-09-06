@@ -275,7 +275,9 @@ describe("protocolText", () => {
     // ...and says so on screen, in one clause, or a question about the second
     // row under a higher-scoring first row reads as a bug.
     expect(FIND_SRC, "the cue names the row it stepped over").toContain("ranked higher (");
-    expect(FIND_SRC, "the cue says why it stepped over it").toContain("so this question is about the next row down");
+    expect(FIND_SRC, "the cue says why it stepped over it").toContain(
+      "so this question is about the next readable row",
+    );
     // The install command names the row the question names, never the one it
     // skipped.
     expect(FIND_SRC, "the install line follows the question").toContain("install ${asked.r.pkg} --force");
@@ -304,7 +306,7 @@ describe("protocolText", () => {
       "const chosen = atT.find((x) => !descriptionUnreadable(x.r.description));",
     );
     expect(FIND_SRC, "the policy line says which row it stepped over").toContain(
-      "so the command below is about the next row down",
+      "so the command below is about the next readable row",
     );
     // ...and the command carries the phrase that found the row, exactly as
     // the question's command does. Without it an auto install records no
@@ -316,6 +318,28 @@ describe("protocolText", () => {
     );
     expect(SKILL_MD.replace(/\s+/g, " "), "SKILL.md carries the same gate").toContain(
       "no question to put, but the same check: read the row's description",
+    );
+  });
+
+  it("orders the one unattended path: read, then run — in the block and in the header", () => {
+    // This block is read at SESSION START, before any tool result, and
+    // `Policy allows this` is the single outcome that acts without the user
+    // in the loop. While the bullet read "`Policy allows this` — run it.",
+    // everything standing between a homonym and an unattended install lived
+    // in text the model meets later (find.ts's cue) — and a model that has
+    // internalised the label alone can act on it without ever reading that
+    // far. Two words buy the sequencing the label can carry on its own.
+    const t = flat();
+    expect(t).toContain("`Policy allows this` — read, then run.");
+    expect(t).not.toMatch(/`Policy allows this` — run it/);
+    // ...and the header's one-clause gloss of the same label, which is the
+    // FIRST sentence of the tool result and six lines above the command,
+    // gives the same order instead of an unconditional "run it".
+    expect(FIND_SRC, "the header gloss reads before it runs").toContain(
+      "no question to put: read that row's description, then run the command ",
+    );
+    expect(FIND_SRC, "no unconditional gloss survives").not.toContain(
+      "no question to put: run the command",
     );
   });
 
