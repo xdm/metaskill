@@ -13,8 +13,8 @@
     },
     {
       "query": "calorie counting",
-      "pkg": null,
-      "homonym": false
+      "pkg": "anthropics/skills@claude-api",
+      "homonym": true
     },
     {
       "query": "hydration tracking",
@@ -28,7 +28,7 @@
     },
     {
       "query": "insomnia help",
-      "pkg": "dietrichgebert/ponytail@ponytail-help",
+      "pkg": "juliusbrussee/caveman@caveman-help",
       "homonym": true
     },
     {
@@ -68,7 +68,7 @@
     },
     {
       "query": "home workout",
-      "pkg": "homeassistant-ai/skills@home-assistant-best-practices",
+      "pkg": "affaan-m/ecc@homelab-network-setup",
       "homonym": true
     },
     {
@@ -98,12 +98,12 @@
     },
     {
       "query": "goal setting",
-      "pkg": "joeseesun/qiaomu-goal-meta-skill@qiaomu-goal-meta-skill",
-      "homonym": false
+      "pkg": "backnotprop/plannotator@plannotator-setup-goal",
+      "homonym": true
     },
     {
       "query": "meeting notes summary",
-      "pkg": "larksuite/cli@lark-workflow-meeting-summary",
+      "pkg": "daymade/claude-code-skills@meeting-minutes-taker",
       "homonym": false
     },
     {
@@ -158,12 +158,12 @@
     },
     {
       "query": "investing basics",
-      "pkg": "firebase/agent-skills@firebase-basics",
+      "pkg": "tradermonty/claude-trading-skills@kanchi-dividend-sop",
       "homonym": true
     },
     {
       "query": "saving money",
-      "pkg": "launchdarkly/ai-tooling@create-graph",
+      "pkg": "binance/binance-skills-hub@trading-signal",
       "homonym": true
     },
     {
@@ -203,7 +203,7 @@
     },
     {
       "query": "home organization",
-      "pkg": "homeassistant-ai/skills@home-assistant-best-practices",
+      "pkg": "affaan-m/ecc@homelab-network-setup",
       "homonym": true
     },
     {
@@ -213,7 +213,7 @@
     },
     {
       "query": "language learning",
-      "pkg": "affaan-m/ecc@continuous-learning",
+      "pkg": "huggingface/skills@huggingface-llm-trainer",
       "homonym": true
     },
     {
@@ -223,7 +223,7 @@
     },
     {
       "query": "exam preparation",
-      "pkg": "composiohq/awesome-claude-skills@invoice-organizer",
+      "pkg": "anthropics/claude-for-legal@legal-writing",
       "homonym": true
     },
     {
