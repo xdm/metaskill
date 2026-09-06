@@ -81,13 +81,23 @@ describe("protocolText", () => {
       "live search found",
       "Refused by policy",
       "No skills found",
-      // The lines find.ts now prints for the top askable row, one per band.
-      // The block tells the model to act on whichever one appears, so the
-      // labels have to be the ones that actually reach the screen.
+      // The lines find.ts now prints for the top askable row, one per
+      // outcome. The block tells the model to act on whichever one appears,
+      // so the labels have to be the ones that actually reach the screen.
       "Ask the user:",
-      // Named in the block as well as in SKILL.md, so renaming it in find.ts
-      // fails the block's cross-check too, not only the reference's.
+      // Named in the block as well as in SKILL.md, so all three documents
+      // have to agree on the wording. Note what this does NOT catch: the
+      // header find.ts prints names every label too, so a rename of the
+      // VERDICT line alone still satisfies `FIND_SRC.toContain(label)` here.
+      // The exact-output assertions in test/integration.test.ts are what
+      // pin the printed line itself.
       "Weak matches only",
+      // The third line under the rows: with `trust.auto_install: true` the
+      // top row can come back `auto`, and this case used to print nothing
+      // at all under a header promising that the line under the rows
+      // decides. It now prints the concrete install command, and both
+      // documents say to run it.
+      "Policy allows this",
       // A timed-out live lookup and a registry that answered "nothing" are
       // different facts. One label for both would have the model report a
       // coverage gap it never established.
@@ -260,7 +270,7 @@ describe("protocolText", () => {
     // query. The check that suppresses a question is about ONE row's
     // evidence, so it must retire that row, not the lookup.
     expect(FIND_SRC, "find.ts picks the first readable askable row").toContain(
-      "const asked = askableAtT.find((x) => !descriptionUnreadable(x.r.description));",
+      "const chosen = atT.find((x) => !descriptionUnreadable(x.r.description));",
     );
     // ...and says so on screen, in one clause, or a question about the second
     // row under a higher-scoring first row reads as a bug.
@@ -422,6 +432,7 @@ describe("skills/metaskill/SKILL.md", () => {
       "No skills found",
       "Ask the user:",
       "Weak matches only",
+      "Policy allows this",
     ]) {
       expect(SKILL_MD, `SKILL.md names "${label}"`).toContain(label);
       expect(FIND_SRC, `find.ts prints "${label}"`).toContain(label);
@@ -482,12 +493,32 @@ describe("skills/metaskill/SKILL.md", () => {
     }
   });
 
-  it("explains relevance the same way the protocol block does", () => {
+  it("explains relevance the same way the protocol block does — on the threshold, not on 1.0", () => {
     // Two documents, one contract. A reference that omits the scale leaves a
-    // model that read only it with no way to weigh the number find prints.
-    for (const re of [/low `relevance`/i, /barely matched/i, /decline it/i]) {
+    // model that read only it with no way to weigh the number find prints —
+    // and one that anchors the scale somewhere else is worse than silent.
+    // This paragraph used to read "a full match sits around 1.0 or above; a
+    // low `relevance` means the row barely matched — decline it", which at
+    // T = 0.55 tells the model that everything from 0.55 to 1.0 is not a
+    // full match and then leaves "low" undefined. Three of the four real
+    // deserving queries live in exactly that band (0.56, 0.64, 0.75), so the
+    // sentence read as licence to decline the rows the threshold admits.
+    // The scale is the threshold, in both documents, quoted from the
+    // constant so neither can drift from the code that applies it.
+    const T = MIN_ASK_RELEVANCE.toFixed(2);
+    const flatProtocol = protocolText().replace(/\s+/g, " ");
+    for (const s of [`\`relevance\` >= ${T}`, `under ${T}`]) {
+      expect(flatMd, `SKILL.md quotes "${s}"`).toContain(s);
+      expect(flatProtocol, `protocol quotes "${s}"`).toContain(s);
+    }
+    for (const re of [/low `relevance`/i, /barely matched/i, /decline it in silence/i]) {
       expect(flatMd, `SKILL.md matches ${re}`).toMatch(re);
-      expect(protocolText().replace(/\s+/g, " "), `protocol matches ${re}`).toMatch(re);
+      expect(flatProtocol, `protocol matches ${re}`).toMatch(re);
+    }
+    // ...and the old anchor is gone, not merely outnumbered.
+    for (const re of [/full match/i, /1\.0 or above/, /around 1\.0/]) {
+      expect(flatMd, `SKILL.md must not anchor on ${re}`).not.toMatch(re);
+      expect(flatProtocol, `protocol must not anchor on ${re}`).not.toMatch(re);
     }
   });
 

@@ -18,12 +18,19 @@ export interface Hit {
   // is not bounded by 1: BM25's term-frequency factor saturates at K1+1, so a
   // document that repeats every query term lands above it.
   //
-  // It is a signal, never a gate. A fixed floor was tried and removed: the
-  // junk and capability distributions measured against the shipped snapshot
-  // OVERLAP (junk max 1.298, capability min 0.850), so no threshold separates
-  // them, and any floor high enough to reject junk silenced almost every real
-  // query. Judging relevance is the model's job; reporting it is this
-  // number's.
+  // It is a signal, never a gate ON THE LIST. A fixed floor was tried and
+  // removed: the junk and capability distributions measured against the
+  // shipped snapshot OVERLAP (junk max 1.298, capability min 0.850), so no
+  // threshold separates them, and any floor high enough to reject junk
+  // silenced almost every real query. Deciding whether a row FITS the task is
+  // still the model's job — from the description, which is the one place a
+  // homonym shows itself; reporting how much of the query the row matched is
+  // this number's.
+  //
+  // It does gate one thing, and only one: which LINE find prints under the
+  // rows, and so whether the model asks at all. That is MIN_ASK_RELEVANCE
+  // below — read it next; without it this paragraph reads as "the number
+  // decides nothing", which has not been true since the middle band went.
   relevance: number;
 }
 
@@ -66,9 +73,17 @@ export interface Hit {
 // queries — their minimum is 0.56 (`linkedin content writing proptech`), and
 // 0.60 loses it. Going lower buys nothing: at 0.45 the two curves are equal
 // (85% / 85%), i.e. the threshold has stopped discriminating at all, and it
-// admits three more undeserving rows for one more deserving one. It also
-// leaves the one real query that deserved silence (`real estate feed api`,
-// 0.43) below the line with room to spare.
+// admits five more undeserving rows (33 against 28) for one more deserving
+// one. It also leaves the one real query that deserved silence
+// (`real estate feed api`, 0.43) below the line with room to spare.
+//
+// Read the deserving column against what is reachable. Two of the 13 —
+// `meditation mindfulness` and `yoga routine` — return NO hits at all
+// against this snapshot (relevance 0, no row to print), so they are in the
+// denominator at every T and above none of them; the registry simply has
+// nothing for them. The 77% at 0.55 is therefore 10 of the 11 deserving rows
+// any threshold could reach, and no candidate in the table can do better
+// than 11/13 = 85%.
 //
 // 72% of undeserving rows clear 0.55 too. That is expected and is NOT T's
 // job: BM25 ranks a homonym HIGHER when the shared word is rare, so no

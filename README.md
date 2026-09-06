@@ -63,7 +63,7 @@ Between pressing Enter and Claude's first token:
    each one past the trust policy:
 
 ```
-[metaskill] Top matches for "xlsx export formulas" — find does not install. The line under the rows has applied the relevance rule to the top row you could install: `Ask the user:` (relevance >= 0.55) — read that row's description; if it is a different thing with the same word, or has no description, say nothing and solve the task; otherwise ask that question FIRST, before any work; `Weak matches only` (under 0.55) — solve the task yourself, silently.
+[metaskill] Top matches for "xlsx export formulas" — find does not install. The line under the rows has applied these rules to the top row you could install: `Ask the user:` (relevance >= 0.55) — read that row's description; if it is a different thing with the same word, or has no description, say nothing and solve the task; otherwise ask that question FIRST, before any work; `Weak matches only` (under 0.55) — solve the task yourself, silently; `Policy allows this without asking` (you set `trust.auto_install`) — no question to put: run the command that line names.
   aiskillstore/marketplace@xlsx (237 installs, scan=unknown, relevance=0.96) [ask: needs your yes — publisher aiskillstore not allowlisted]
     Spreadsheet toolkit (.xlsx/.csv). Create/edit with formulas/formatting, analyze data, visualization, recalculate formulas, for spreadsheet p
   davila7/claude-code-templates@xlsx (951 installs, scan=clean, relevance=0.96) [ask: needs your yes — publisher davila7 not allowlisted]
@@ -86,13 +86,16 @@ Install only on the user's explicit yes: "/Users/you/.nvm/versions/node/v24.17.0
    because none of these publishers is allowlisted; an allowlisted publisher
    with a clean scan reads `auto-install is off` instead — the shipped
    default, where the verdict is computed in full and then held for your yes.
-5. The line under the rows is what Claude acts on, and there are two of them
-   to choose from — no middle one. At `relevance` 0.55 and above the question
-   itself prints (`Ask the user:`), under a cue telling Claude to read that
-   row's description first: a rare word ranks its wrong sense just as highly
-   — "insomnia help" finds a REST client called Insomnia — so a top row that
-   is a different thing with the same word, or one with no description to
-   read, is declined in silence. Anything else at or above the line is asked
+5. The line under the rows is what Claude acts on, and there are two
+   relevance zones to choose from — no middle one. At `relevance` 0.55 and
+   above the question itself prints (`Ask the user:`), under a cue telling
+   Claude to read that row's description first: a rare word ranks its wrong
+   sense just as highly — "insomnia help" finds a REST client called Insomnia
+   — so a top row that is a different thing with the same word is declined in
+   silence. A top row with no description to read is not declined but stepped
+   over: the question moves to the next readable row still above the line and
+   says which row it skipped, and only when nothing up there can be read does
+   it print no question at all. Anything else at or above the line is asked
    about, first, before Claude starts the task; there is no band in which it
    gets to weigh whether asking is worth the turn, because that is the slot
    five real lookups in a row used to skip the question entirely. Below 0.55
@@ -100,12 +103,17 @@ Install only on the user's explicit yes: "/Users/you/.nvm/versions/node/v24.17.0
    question is written out for it — package, publisher, install count, scan
    verdict — because a question Claude has to compose is a question it talks
    itself out of asking. Nothing installs without your explicit yes, with the
-   command that line printed.
+   command that line printed — unless you set `trust.auto_install: true`, and
+   then a top row policy clears reads `Policy allows this without asking` and
+   the line names the install command to run.
 
    0.55 is measured, not picked: on 52 queries (47 everyday phrases plus five
    real ones from a working session), it is the highest threshold that still
-   admits every query whose top row deserved a question. The rows above it
-   that do *not* deserve one are what the description check is for.
+   admits all four of the *real* queries whose top row deserved a question —
+   across the whole set it admits 10 of the 13 deserving top rows, two of
+   which no threshold can reach because the registry answers them with
+   nothing at all. The rows above it that do *not* deserve a question are
+   what the description check is for.
 
 A local index hit like this is one fast subprocess call; installing a skill —
 or, on an index miss, the one live registry search, capped at 4 seconds — is

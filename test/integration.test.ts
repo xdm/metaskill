@@ -280,6 +280,11 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     );
     expect(r.stdout).not.toContain("install <pkg>");
     expect(r.stdout).not.toContain("Installed now:");
+    // ...and with the knob off there is no policy line under the rows: the
+    // same index and the same query print exactly the ask output above. This
+    // is the control for the knob-on case below. (The header NAMES every
+    // label it can print, so only the lines under the rows can say this.)
+    expect(r.stdout.split("\n").filter((l) => l.startsWith("Policy allows this"))).toEqual([]);
     // Nothing ran, nothing was recorded, nothing landed on disk.
     expect(stubCalls(home).filter((c) => c[0] === "add")).toEqual([]);
     expect(readLockFile(home)).toEqual({});
@@ -311,13 +316,22 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     expect(r.stdout).toContain("[auto: publisher anthropics is allowlisted, scan clean]");
     expect(r.stdout).not.toContain("auto-install is off");
     expect(r.stdout).not.toContain("Installed now:");
-    // No verdict line and no install command: an `auto` row needs no question
-    // by definition, so there is no question, and the command that used to
-    // print here named a literal `<pkg>` — a command SKILL.md Rule 1 ("run it
-    // as printed") cannot be obeyed with. The install line now follows the
-    // question and nothing else, so it is absent along with it.
+    // ONE line under the rows, naming the concrete package. An `auto` row
+    // needs no question by definition — so there is none — but for a while
+    // this case printed NOTHING under a header promising that the line under
+    // the rows decides, which is how a model ends up deciding for itself.
+    // What was removed then was a command reading `install <pkg> --force`: a
+    // placeholder SKILL.md Rule 1 ("run it as printed") cannot be obeyed
+    // with. This is the same command made concrete, and without `--force`,
+    // because that flag stands in for the yes the knob has already given.
+    expect(r.stdout).toContain(
+      `\nPolicy allows this without asking — run: "${process.execPath}" "${CLI}" install anthropics/skills@gizmo\n`,
+    );
+    // The question's own command follows a question, so it stays absent...
     expect(r.stdout).not.toContain("Install only on the user's explicit yes:");
     expect(r.stdout).not.toContain("<pkg>");
+    expect(r.stdout).not.toContain("--force");
+    expect(r.stdout.split("\n").filter((l) => l.startsWith("Ask the user:"))).toEqual([]);
     expect(stubCalls(home).filter((c) => c[0] === "add")).toEqual([]);
     expect(readLockFile(home)).toEqual({});
     expect(fs.existsSync(path.join(home, ".claude", "skills", "gizmo"))).toBe(false);
@@ -479,13 +493,25 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     const row = stdout.split("\n").find((l) => l.includes(`${pkg} (`))!;
     return Number(/relevance=(\d+\.\d+)/.exec(row)![1]);
   };
+  // A sandbox with `trust.auto_install: true`, the one setting that lets a
+  // row come back `auto` — and so the only way to reach the third line the
+  // rows can resolve to.
+  const autoHome = (tag: string): string => {
+    const home = freshHome(tag);
+    fs.mkdirSync(path.join(home, ".metaskill"), { recursive: true });
+    fs.writeFileSync(
+      path.join(home, ".metaskill", "metaskill.yaml"),
+      ["version: 1", "trust:", "  auto_install: true"].join("\n"),
+    );
+    return home;
+  };
   // The one line the zones produce. The header names both labels (it tells
   // the model what each means), so a whole-stdout assertion would match the
   // wrong copy — this reads the line that was actually chosen.
   const verdictLines = (stdout: string): string[] =>
     stdout
       .split("\n")
-      .filter((l) => /^(Likely fit|Ask the user: Install|Weak matches only)/.test(l));
+      .filter((l) => /^(Likely fit|Ask the user: Install|Weak matches only|Policy allows this)/.test(l));
 
   it("at or above the threshold: the description check, then the question, and nothing else", async () => {
     // The question still prints, unchanged and ready to relay — it is the
@@ -526,7 +552,11 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     const below = await runCli(["find", "snorklex zorbulon", "--index", idx], { home });
     const relAbove = topRelevance(above.stdout, "someorg/repo@snorklex");
     const relBelow = topRelevance(below.stdout, "someorg/repo@snorklex");
-    // 0.61 and 0.53 — one on each side of 0.55, four hundredths apart.
+    // 0.61 and 0.53 — one on each side of 0.55, eight hundredths apart, not
+    // the T±0.01 a boundary test would ideally straddle. That pair is not
+    // reachable: relevance is a BM25 score over a per-query constant, so it
+    // moves in jumps far bigger than a hundredth and lands where the corpus
+    // puts it. This is the closest straddle this index can be made to print.
     expect(relAbove).toBeGreaterThanOrEqual(MIN_ASK_RELEVANCE);
     expect(relBelow).toBeLessThan(MIN_ASK_RELEVANCE);
     expect(verdictLines(above.stdout)[0]).toMatch(/^Likely fit \(relevance 0\.61\)/);
@@ -580,6 +610,63 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
       `Install only on the user's explicit yes: "${process.execPath}" "${CLI}" install acme/tools@snorklex-helper --force`,
     );
     expect(r.stdout).not.toContain(" install someorg/repo@snorklex --force");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("an `auto` row below the line gets the same silence as any other row", async () => {
+    // The knob is the user's standing yes to the QUESTION, not a waiver of
+    // the threshold. A row policy trusts is still a junk match when the query
+    // barely touched it, and "install this without asking" is the one
+    // sentence this command exists not to print on a junk query — the defect
+    // the whole two-zone design descends from.
+    const home = autoHome("find-zone-auto-weak");
+    const idx = writeIndex(home, [
+      rec({ name: "snorklex", source: "anthropics/skills", pkg: "anthropics/skills@snorklex",
+            description: "Snorklex processor: snorklex pipelines, snorklex jobs, snorklex runs, snorklex builds.",
+            installs: 42 }),
+      rec({ name: "widget-press", source: "acme/tools", pkg: "acme/tools@widget-press",
+            description: "Press widgets into shape.", installs: 20 }),
+    ]);
+    const r = await runCli(["find", "snorklex zorbulon flimscape", "--index", idx], { home });
+    // The row really is `auto` — the knob is on and the publisher is
+    // allowlisted — so the silence below comes from the threshold, not from
+    // policy having refused it.
+    expect(r.stdout).toContain("[auto: publisher anthropics is allowlisted, scan clean]");
+    expect(topRelevance(r.stdout, "anthropics/skills@snorklex")).toBeLessThan(MIN_ASK_RELEVANCE);
+    expect(verdictLines(r.stdout)).toEqual([
+      "Weak matches only (top relevance 0.31) — solve the task yourself, silently.",
+    ]);
+    // That list is exhaustive, so there is no policy line — and no command
+    // of any kind under a sentence that says solve it yourself.
+    expect(r.stdout).not.toContain(" install anthropics/skills@snorklex");
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("an `auto` row nobody can describe is stepped over too, and the command names the row that prints", async () => {
+    // The description check is not only about questions. With the knob on, a
+    // row with no description at all reaches `auto` on installs alone
+    // (>= min_installs with a clean scan — policy.ts), and the snapshot's 129
+    // description-less records are exactly the popular registry sources that
+    // clear it. Telling the model to install, unattended, a skill whose row
+    // says nothing is the same defect as asking the user about it, minus the
+    // user.
+    const home = autoHome("find-zone-auto-blank");
+    const idx = writeIndex(home, [
+      rec({ name: "snorklex", source: "anthropics/skills", pkg: "anthropics/skills@snorklex",
+            description: ">", installs: 42 }),
+      rec({ name: "snorklex-helper", source: "anthropics/skills", pkg: "anthropics/skills@snorklex-helper",
+            description: "Snorklex processing helper: snorklex jobs and snorklex pipelines.", installs: 20 }),
+    ]);
+    const r = await runCli(["find", "snorklex", "--index", idx], { home });
+    const skippedRel = topRelevance(r.stdout, "anthropics/skills@snorklex");
+    expect(skippedRel).toBeGreaterThan(topRelevance(r.stdout, "anthropics/skills@snorklex-helper"));
+    expect(verdictLines(r.stdout)).toEqual([
+      `Policy allows this without asking — anthropics/skills@snorklex ranked higher (${skippedRel.toFixed(2)}) but ` +
+        "its description is blank or a bare mark (`>`, `|`), so this line is about the next row down — run: " +
+        `"${process.execPath}" "${CLI}" install anthropics/skills@snorklex-helper`,
+    ]);
+    // The blank row is never the one the command names.
+    expect(r.stdout).not.toContain(" install anthropics/skills@snorklex\n");
     fs.rmSync(home, { recursive: true, force: true });
   });
 
@@ -914,7 +1001,10 @@ describe("find: ranking is a signal, not an action", () => {
   // not: measured against the shipped snapshot the junk and capability
   // relevance distributions overlap (junk max 1.298, capability min 0.850),
   // so any floor strict enough to stop "say hello" silenced 24 of 25 real
-  // phrases. Judging relevance is the model's job. `find` reports and stops.
+  // phrases. Which row FITS is still the model's call, read off the printed
+  // description; what the number decides is one thing only, and it is not
+  // hidden in the ranking — MIN_ASK_RELEVANCE picks the line printed under
+  // the rows (see read.ts). `find` reports and stops either way.
 
   it("prints a weak junk match with its relevance instead of installing or hiding it", async () => {
     const home = freshHome("find-weak");

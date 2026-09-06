@@ -78,6 +78,17 @@ import { metaskillCmd } from "./paths.js";
 //     with a genuine match directly beneath it. Only when nothing above the
 //     line can be read does the block's promise of a question go unkept, and
 //     find.ts says so in the line where the question would have been.
+//   - The third line under `Top matches` is `Policy allows this`, and it is
+//     here because the case used to print nothing at all. With
+//     `trust.auto_install: true` every row can come back `auto`, and then
+//     find had no question to hand over and printed no line — under a header
+//     promising that the line under the rows decides. A model told to act on
+//     a line that never comes acts on its own reading of the list, which is
+//     the failure this whole block is against. So find prints the concrete
+//     install command for that row (no `--force`: the knob IS the standing
+//     yes) and this line says to run it. One short line, because the printed
+//     line already carries the command and the row it names; the reference
+//     (SKILL.md) carries the rest.
 //   - The threshold applies to `Top matches` only, and `live search found`
 //     gets its own line. A registry hit has no relevance to place — no ranked
 //     list to place it in — and it is always askable, so it always prints a
@@ -166,6 +177,12 @@ import { metaskillCmd } from "./paths.js";
 // unbudgeted documents instead — find.ts's cue, which the model reads in the
 // decision turn, and SKILL.md. This block keeps the rule in its shortest
 // true form: read the description, then ask or say nothing.
+//
+// The `Policy allows this` line (33 chars with its indent and newline) was
+// paid for out of what those trades left over, and it spends nearly all of
+// it: the injected string is 1595 of 1600 and the prose 1375 of 1400.
+// Nothing further fits. The next line added here has to buy its space from a
+// sentence above it, and the two budget tests are what will say so.
 export function protocolText(): string {
   return [
     "[metaskill] Standing protocol — every task, this session.",
@@ -195,6 +212,7 @@ export function protocolText(): string {
     "  with the same word, or no description, say nothing; else ask it FIRST.",
     "  `Weak matches only` (under 0.55) — a low `relevance`: barely matched,",
     "  decline it in silence.",
+    "  `Policy allows this` — run it.",
     "- `live search found` — relay its question.",
     "- `Refused by policy` — never offer these.",
     "- `Registry did not answer` — not a miss; retry.",

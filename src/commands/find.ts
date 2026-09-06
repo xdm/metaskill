@@ -309,19 +309,19 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       logFind([], [...askable, ...denied].map(toDiscovered)); // askable is empty here: stdout order is the refused block
       return 0;
     }
-    // The first row whose decision is `ask` — not simply `rows[0]`. A denied
-    // row can outrank every askable one, and suppressing the question on that
-    // account would refuse to ask about a package policy is willing to
-    // install because a different package is not. An `auto` row above it (the
-    // knob is on) needs no question by definition, so it does not get one.
-    const topAsk = askable.find((x) => x.v.decision === "ask");
-    // Every row the question could name, in rank order: `ask` decisions at or
-    // above the threshold. `relevance` divides every score for one query by
-    // the same constant, so this is a prefix of `askable` and its first
-    // element IS topAsk whenever topAsk clears the line.
-    const askableAtT = askable.filter((x) => x.v.decision === "ask" && x.rel >= MIN_ASK_RELEVANCE);
-    // The row the printed question is about: the highest-ranked one at or
-    // above the threshold that has a description to read.
+    // The row the line under the rows is about, before the two things that
+    // can retire it — not simply `rows[0]`. A denied row can outrank every
+    // askable one, and letting it decide would refuse to act on a package
+    // policy is willing to install because a different package is not.
+    const top = askable[0]!;
+    // Every row the line could be about, in rank order: askable rows at or
+    // above the threshold, whatever policy decided about them. `relevance`
+    // divides every score for one query by the same constant, so this is a
+    // prefix of `askable`, its first element IS `top` whenever anything
+    // clears the line, and it is empty exactly when nothing does.
+    const atT = askable.filter((x) => x.rel >= MIN_ASK_RELEVANCE);
+    // The row the printed line is about: the highest-ranked one at or above
+    // the threshold that has a description to read.
     //
     // The fallback is not a nicety. `linkedin outreach prospecting` — one of
     // the five real 2026-09-04 queries — puts code.deepline.com@portfolio-
@@ -331,15 +331,32 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     // said "nothing here can confirm the fit" while a readable, askable,
     // above-threshold row sat directly beneath it, printed but unmentioned.
     // The check that suppresses a question is about ONE row's evidence, so it
-    // must retire that row, not the query.
-    const asked = askableAtT.find((x) => !descriptionUnreadable(x.r.description));
-    // Named in the cue when the fallback fires, because a question about the
+    // must retire that row, not the query. It spans `auto` rows too: with the
+    // knob on, a row nobody can describe reaches `auto` on installs alone
+    // (>= min_installs and a clean scan is enough — see policy.ts), and
+    // code.deepline.com@portfolio-prospecting, 25,096 installs and no
+    // description, is exactly that row. "Install this without asking" is the
+    // last sentence that should print about text nobody can read.
+    const chosen = atT.find((x) => !descriptionUnreadable(x.r.description));
+    // The row a QUESTION is printed about — the same row, unless policy has
+    // already cleared it, in which case there is nothing to ask. It drives
+    // the install command below, so the command and the question cannot name
+    // different packages.
+    const asked = chosen && chosen.v.decision === "ask" ? chosen : undefined;
+    // Named in the line when the fallback fires, because a line about the
     // second row under a list whose first row scores higher looks like a bug
-    // unless the output says why. One clause, not a paragraph.
-    const skipped = asked && askableAtT[0] !== asked ? askableAtT[0] : undefined;
+    // unless the output says why. One clause, not a paragraph — and one per
+    // outcome, written out rather than spliced from a shared head, because
+    // the asking line's clause ends in "this question" and the policy line
+    // asks nothing.
+    const skipped = chosen && atT[0] !== chosen ? atT[0] : undefined;
     const skipClause = skipped
       ? ` — ${skipped.r.pkg} ranked higher (${skipped.rel.toFixed(2)}) but its description is blank or a bare mark ` +
         `(\`>\`, \`|\`), so this question is about the next row down`
+      : "";
+    const skipClauseAuto = skipped
+      ? ` — ${skipped.r.pkg} ranked higher (${skipped.rel.toFixed(2)}) but its description is blank or a bare mark ` +
+        `(\`>\`, \`|\`), so this line is about the next row down`
       : "";
     // Two zones, and the only silence above the line is a check the model can
     // make and BM25 cannot.
@@ -379,14 +396,33 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     const unreadableCue = (rel: number, pkg: string): string =>
       `Likely fit (relevance ${rel.toFixed(2)}) — but ${pkg}'s description is blank or a bare mark (\`>\`, \`|\`): ` +
       `nothing here can confirm the fit, so no question is printed. Say nothing and solve the task.\n`;
-    const verdictLine = !topAsk
-      ? "" // every askable row is `auto` (the knob is on): no question to ask
-      : topAsk.rel < MIN_ASK_RELEVANCE
-        ? `Weak matches only (top relevance ${topAsk.rel.toFixed(2)}) — solve the task yourself, silently.\n`
+    // Policy already cleared this row — the user set `trust.auto_install`, so
+    // the question it would have been asked has a standing answer, and what
+    // the model needs is the command. This case used to print NOTHING: the
+    // header promised a line under the rows, the rows ended, and the next
+    // thing on screen was the prompt. What was removed here was a command
+    // naming a literal `<pkg>` (Rule 1, "run it as printed", cannot be obeyed
+    // with a placeholder) — and silence is that defect one step further on,
+    // because a model told the line decides and shown no line decides for
+    // itself. So: one line, the concrete package, no `<pkg>`.
+    //
+    // No `--force`. That flag stands in for the user's yes, and `decide()`
+    // returned `auto` precisely because the knob makes that yes standing;
+    // `install` accepts the bare command in that state (see install.ts).
+    // The threshold and the description check still apply above — an `auto`
+    // row below the line, or one nobody can describe, is a junk match policy
+    // happens to trust, and "install it unattended" is the one sentence this
+    // command exists not to print.
+    const autoLine = (x: (typeof askable)[number]): string =>
+      `Policy allows this without asking${skipClauseAuto} — run: ${metaskillCmd()} install ${x.r.pkg}\n`;
+    const verdictLine = !atT.length
+      ? `Weak matches only (top relevance ${top.rel.toFixed(2)}) — solve the task yourself, silently.\n`
+      : !chosen
+        ? unreadableCue(top.rel, top.r.pkg)
         : asked
           ? askCue(asked.rel) +
             `${questionLine(asked.r.pkg, installsLabel(asked.r), publisherOf(asked.r.pkg), asked.r.scan)}\n`
-          : unreadableCue(topAsk.rel, topAsk.r.pkg);
+          : autoLine(chosen);
     // Below the line there is nothing to install, so no install command is
     // printed. Left in place it was the only actionable line on screen, one
     // line under "solve the task yourself" and with exactly one askable
@@ -401,6 +437,10 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     // `<pkg>`. Rule 1 of SKILL.md is "run the command as printed", and a
     // placeholder is a command the model has to edit before running, which is
     // how a wrong package (or a refusal to run it at all) gets in.
+    //
+    // It follows a QUESTION, so it prints only when one does: the `auto` line
+    // carries its own command (there is no yes to wait for), and this
+    // sentence under it would be a second, contradictory one.
     const installLine = !asked
       ? ""
       : `Install only on the user's explicit yes: ${metaskillCmd()} install ${asked.r.pkg} --force --matched "${q}"\n`;
@@ -415,11 +455,12 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       // wording comes back, in code or in a comment — and fails too if the
       // number here drifts from MIN_ASK_RELEVANCE, which is why it is
       // interpolated rather than typed.
-      `[metaskill] Top matches for "${q}" — find does not install. The line under the rows has applied the relevance ` +
-        `rule to the top row you could install: \`Ask the user:\` (relevance >= ${MIN_ASK_RELEVANCE.toFixed(2)}) — read ` +
+      `[metaskill] Top matches for "${q}" — find does not install. The line under the rows has applied these rules to ` +
+        `the top row you could install: \`Ask the user:\` (relevance >= ${MIN_ASK_RELEVANCE.toFixed(2)}) — read ` +
         `that row's description; if it is a different thing with the same word, or has no description, say nothing and ` +
         `solve the task; otherwise ask that question FIRST, before any work; \`Weak matches only\` (under ` +
-        `${MIN_ASK_RELEVANCE.toFixed(2)}) — solve the task yourself, silently.\n` +
+        `${MIN_ASK_RELEVANCE.toFixed(2)}) — solve the task yourself, silently; \`Policy allows this without asking\` ` +
+        `(you set \`trust.auto_install\`) — no question to put: run the command that line names.\n` +
         askable.map((x) => line(x.r, x.rel, x.v.decision, x.v.reason)).join("\n") +
         // The question first, then the command that is only valid once it has
         // been answered. --matched carries this exact (already-normalised)

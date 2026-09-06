@@ -6,8 +6,8 @@ description: Protocol for handling the [metaskill] block in context. Use in ever
 # metaskill protocol
 
 metaskill injects one `[metaskill]` block into your context, from a
-SessionStart hook: a standing protocol naming a `find` command. That block is
-self-contained — this skill is the longer reference for the same rules.
+SessionStart hook: a standing protocol naming a `find` command. This skill is
+the longer reference for the same rules.
 
 ## On "Needs confirmation"
 
@@ -15,7 +15,7 @@ self-contained — this skill is the longer reference for the same rules.
 exactly ONE short question to the user — what the skill is, who publishes it,
 how many installs, why the task needs it — and on an explicit yes re-run the
 `install <pkg> --force` command exactly as it was printed. No clear yes means
-solve the task without it; never install on an assumed or implied approval.
+solve the task without it; never install on an assumed approval.
 
 ## On `find`
 
@@ -24,7 +24,7 @@ Every session opens with a `[metaskill] Standing protocol` block naming a
 task, before you begin work, derive a 2-4 word English capability phrase
 from the task ("reddit automation", "meal planning") and run that command via
 Bash. Run it even when you are sure no skill is needed — checking that is its
-job. Once per task, not once per session; only pure conversation is exempt.
+job. Once per task, not per session; pure chat is exempt.
 The prompt may be in any language; the query is always English: derive it
 from the task, never translate the prompt.
 
@@ -35,30 +35,31 @@ prints, and `install` enforces policy. Nothing reaches disk without the
 user's explicit yes, unless they set `trust.auto_install: true` in
 `~/.metaskill/metaskill.yaml` (off by default).
 
-`relevance` is BM25's report of how much of your query a row matched. A full
-match sits around 1.0 or above; a low `relevance` means the row barely matched
-the words — decline it.
+`relevance` is BM25's report of how much of your query a row matched. A match
+is `relevance` >= 0.55; under that a low `relevance` means the row barely
+matched the words — decline it in silence.
 
 The number on the row `find` singles out decides what happens next; it is a
 rule, not a call you make. `find` applies it and prints the deciding line
-under the rows, about the top row you could still install. Two outcomes,
-no middle.
+under the rows, about the top row you could still install.
 
 - **`Ask the user: Install ... ? yes/no`** (`relevance` >= 0.55) — a likely
   fit: read the row's description. If it fits the task, ask that question
-  first, relayed as printed — it already names the package, its install
-  count, its publisher and its scan verdict. Not left unasked because you
-  could do the task yourself: you almost always could; that is not what the
-  question is for. Say nothing only on a check the row itself settles: a
-  rare word scores high in the wrong sense too, so if it is a different thing
-  with the same word — an `insomnia` REST client for a sleep question — or
-  the description is blank or a bare `>` or `|`, solve the task in silence.
+  first, relayed as printed — it already names the package, its installs,
+  publisher and scan verdict. Not left unasked because you could do the task
+  yourself: you almost always could; that is not what the question is for.
+  Say nothing only on a check the row itself settles: a rare word scores high
+  in the wrong sense too, so if it is a different thing with the same word —
+  an `insomnia` REST client for a sleep question — or the description is
+  blank or a bare `>` or `|`, solve the task in silence.
 - **`Weak matches only`** (under 0.55) — decline and say nothing.
+- **`Policy allows this without asking`** — no question to put: run the
+  command on that line.
 
 Asking means asking before you start the task, not inside an answer you have
 already begun: use the `AskUserQuestion` tool if you have it — option label
-`Install <skill name>`, the full package in its description, `No` as the
-other option — else send one line of text and nothing else.
+`Install <skill name>`, the package in its description, `No` as the other
+option — else send one line of text and nothing else.
 
 `find` never asks about a row whose description is blank or a bare `>` or
 `|`: no question is printed for a row you cannot check. If a readable row
@@ -66,8 +67,8 @@ under it still clears 0.55, the question names THAT row and the line says
 which it stepped over; with no readable row at all it prints no question and
 no install command — say nothing and solve the task.
 
-A **`live search found`** hit has no relevance to place and no scan verdict,
-so it is always `ask`. It prints its question — ask it the same way.
+A **`live search found`** hit has no relevance and no scan verdict, so it is
+always `ask`. It prints its question — ask it the same way.
 
 Act on what it prints:
 
@@ -107,4 +108,4 @@ line. Never on an assumed approval.
 5. Useful subcommands, run the same way: `log -n 20`, `update`,
    `init --uninstall` (remove). The
    `/metaskill:list`, `/metaskill:log` and `/metaskill:update` slash commands
-   already resolve the path for you.
+   resolve the path for you.
