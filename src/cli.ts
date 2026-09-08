@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { packageRoot } from "./paths.js";
 
-const HELP = `metaskill — Claude Code installs the skills a task needs, before solving it.
+const HELP = `metaskill — Claude Code finds and vets the skills a task needs, installs one only when you say yes, then solves the task.
 
 Usage: metaskill <command> [options]
 
