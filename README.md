@@ -5,9 +5,11 @@
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 ![node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen)
 
-Claude Code works out which skills a task needs, checks them against your trust
-policy, installs them safely once you say yes, then solves the task. You never
-search for, compare, or hunt down skills manually.
+It starts when you hand your coding agent a task. Before it writes a line, it
+looks for a skill that fits (spreadsheets, Postgres, LinkedIn posts, whatever
+the job is), checks that skill against your trust policy, and asks you one
+question: install it? You say yes or no. Nothing gets installed behind your
+back, and you never go looking for skills yourself.
 
 ```bash
 /plugin marketplace add xdm/metaskill

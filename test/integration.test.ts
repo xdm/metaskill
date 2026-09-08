@@ -2175,7 +2175,7 @@ describe("packaged assets", () => {
       // No unqualified "and installs …" claim.
       expect(text, where).not.toMatch(/vets and installs|installs them safely/i);
       // …and the user's consent is named, not implied.
-      expect(text, where).toMatch(/\byes\b/i);
+      expect(text, where).toMatch(/\byes\b|\bconfirm/i);
     }
   });
 
