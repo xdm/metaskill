@@ -27,7 +27,7 @@ job. Once per task, not per session; pure chat is exempt.
 The prompt may be in any language; the query is always English: derive it
 from the task, never translate the prompt.
 
-`find` ranks and vets; it **never installs**. It prints the top candidates
+`find` ranks and checks; it **never installs**. It prints the top candidates
 with their install count, scan verdict, relevance and policy decision, and
 stops: code ranks and applies the rule below, you relay the line it prints,
 `install` enforces policy. Nothing reaches disk without the

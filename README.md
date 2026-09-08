@@ -5,7 +5,7 @@
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 ![node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen)
 
-Claude Code works out which skills a task needs, vets them against your trust
+Claude Code works out which skills a task needs, checks them against your trust
 policy, installs them safely once you say yes, then solves the task. You never
 search for, compare, or hunt down skills manually.
 
@@ -79,7 +79,7 @@ Ask the user: Install aiskillstore/marketplace@xlsx (237 installs, publisher ais
 Install only on the user's explicit yes: "/Users/you/.nvm/versions/node/v24.17.0/bin/node" "/Users/you/.metaskill/bin/dist/cli.js" install aiskillstore/marketplace@xlsx --force --matched "xlsx export formulas"
 ```
 
-4. **`find` installs nothing. It ranks, vets, and stops.** Each row carries
+4. **`find` installs nothing. It ranks, checks, and stops.** Each row carries
    its install count, scan verdict, `relevance` (how much of the query the
    row matched, on a scale that means the same thing whatever index you have
    loaded) and the policy's verdict. Every row here reads `needs your yes`
@@ -275,7 +275,7 @@ them until after Claude has botched the task once; metaskill flips the order.
 | "Pull the deals out of our CRM" | your company's private skill via a policy override | Claude guessing a niche vendor's REST API |
 
 The compounding case: a fresh laptop or a new teammate. Zero setup beyond
-`metaskill init`: the first week of real prompts surfaces the same vetted
+`metaskill init`: the first week of real prompts surfaces the same checked
 shortlist for everyone, because the policy (not each person's patience)
 decides what is even offered.
 
@@ -336,7 +336,7 @@ so a prompt is never routed twice.
 
 ```
 metaskill init [--project] [--uninstall]
-metaskill find "<capability words>"                # local-index lookup; ranks and vets, never installs
+metaskill find "<capability words>"                # local-index lookup; ranks and checks, never installs
 metaskill install <owner/repo@skill> [--force]      # policy + scan apply
 metaskill update [names...] [--force]
 metaskill list                                      # what metaskill installed (alias: ls)
@@ -412,7 +412,7 @@ parked for the next session).
 - **Install keeps timing out.** Installs get 120 seconds. If one still runs
   out, run it again: `metaskill install <pkg> --force`.
 - **Claude found a skill but didn't install it.** That's the default.
-  `find` only ranks and vets; Claude asks you before installing, and
+  `find` only ranks and checks; Claude asks you before installing, and
   `--force` records the yes. To let trusted, clean matches through
   unattended, set `auto_install: true` under `trust:` in
   `~/.metaskill/metaskill.yaml`.
