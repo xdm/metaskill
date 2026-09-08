@@ -1,7 +1,7 @@
 {
   "name": "metaskill",
   "displayName": "metaskill",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Skill discovery for Claude Code: finds the right skill for each task, checks it against your trust policy, and installs it once you confirm.",
   "author": {
     "name": "xdm"
