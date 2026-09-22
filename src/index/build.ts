@@ -1,6 +1,7 @@
 import { defaultPolicy } from "../policy.js";
 import type { Policy } from "../types.js";
 import { scanDirectory } from "../scan.js";
+import { dedupeIndex } from "./dedupe.js";
 import { joinRepo, type ScannedSkill } from "./join.js";
 import { fetchRepoArchive, fetchRepoMeta, fetchSkillsViaTree, findSkillDirs } from "./repo.js";
 import { SWEEP_GRAMS, sweepRegistry } from "./registry.js";
@@ -126,11 +127,18 @@ export async function buildIndex(opts: BuildOpts = {}): Promise<IndexFile> {
     opts.onProgress?.(`${source}: unreachable, ${entries.length} records from the registry only`);
   }
 
+  // One record per skill (see dedupe.ts): the copies aggregators and forks
+  // carry are dropped here, after every repository has been read, because
+  // the survivor is chosen against the whole index. repoCount stays the
+  // sweep's: it says how many repositories were read, not how many survived.
+  const { skills: unique, removed } = dedupeIndex(skills);
+  opts.onProgress?.(`${removed} duplicate records dropped (${skills.length} -> ${unique.length})`);
+
   return {
     schemaVersion: INDEX_SCHEMA_VERSION,
     builtAt: (opts.now ?? new Date()).toISOString(),
-    skillCount: skills.length,
+    skillCount: unique.length,
     repoCount: bySource.size,
-    skills,
+    skills: unique,
   };
 }

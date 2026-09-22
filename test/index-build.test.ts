@@ -220,4 +220,42 @@ describe("buildIndex", () => {
       },
     ]);
   });
+
+  it("keeps one record per skill when two repositories carry the same one", async () => {
+    // A mirror that serves the identical SKILL.md under its own name: the
+    // build used to emit both, and search returned the same skill twice.
+    const tar = repoTarball([{ dir: "skills/good", name: "good" }]);
+    const progress: string[] = [];
+    const fetchImpl = (async (url: string) => {
+      const u = String(url);
+      if (u.startsWith("https://skills.sh/api/search")) {
+        return {
+          ok: true,
+          json: async () => ({
+            skills: [
+              { name: "good", source: "o/r", installs: 8000 },
+              { name: "good", source: "m/mirror", installs: 10 },
+            ],
+          }),
+        } as unknown as Response;
+      }
+      if (u.startsWith("https://api.github.com/repos/")) {
+        return { ok: true, json: async () => ({ stargazers_count: 1, pushed_at: "2026-08-26T00:00:00Z" }) } as unknown as Response;
+      }
+      return {
+        ok: true,
+        body: (async function* () {
+          yield new Uint8Array(tar);
+        })(),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    const idx = await buildIndex({ fetchImpl, grams: ["aa"], tmpBase: tmp, onProgress: (m) => progress.push(m) });
+    expect(idx.skills.map((s) => s.pkg)).toEqual(["o/r@good"]);
+    expect(idx.skillCount).toBe(1);
+    // Both repositories were still visited, so the envelope's repoCount is
+    // about the sweep, not the survivors.
+    expect(idx.repoCount).toBe(2);
+    expect(progress.some((m) => /1 duplicate/.test(m))).toBe(true);
+  });
 });

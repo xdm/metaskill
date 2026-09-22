@@ -441,9 +441,17 @@ part of `npm test`, since it makes live network calls:
 npm run build:index   # sweeps skills.sh, scans every repo, writes index.json
 ```
 
+The build keeps one record per skill: aggregator repositories and whole-repo
+forks carry the same SKILL.md under their own package names (11,818 of
+44,573 records on the 2026-09-21 index were such copies), and the copy that
+survives is the one with the higher real install count, then the one from
+the repository that shares skills with the fewest others. Nothing unique is
+dropped.
+
 A scheduled workflow (`.github/workflows/index.yml`) runs this nightly and
 publishes the result as the `index-latest` GitHub Release asset, gated on a
 minimum description-coverage share and a check against the previously
-published record count, so a degraded run never overwrites a good index.
+published record count (both counted after the same deduplication), so a
+degraded run never overwrites a good index.
 
 MIT © xdm

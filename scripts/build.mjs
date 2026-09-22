@@ -29,6 +29,10 @@ chmodSync("dist/cli.js", 0o755);
 await build({ ...common, entryPoints: ["src/index/cli.ts"], outfile: "dist/index-builder.js" });
 chmodSync("dist/index-builder.js", 0o755);
 
+// CI-only entry: the publish gate's like-with-like count (see dedupe-cli.ts).
+await build({ ...common, entryPoints: ["src/index/dedupe-cli.ts"], outfile: "dist/index-dedupe.js" });
+chmodSync("dist/index-dedupe.js", 0o755);
+
 // Publish-time entry: downloads the full index and trims it to the
 // known-installs snapshot shipped in the npm package.
 await build({ ...common, entryPoints: ["src/index/snapshot-cli.ts"], outfile: "dist/snapshot-cli.js" });

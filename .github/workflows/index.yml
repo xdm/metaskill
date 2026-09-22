@@ -92,11 +92,18 @@ jobs:
             }
 
             if (fs.existsSync("previous/index.json")) {
-              const prev = JSON.parse(fs.readFileSync("previous/index.json", "utf8"));
-              const ratio = prev.skillCount ? cur.skillCount / prev.skillCount : 1;
+              // Like with like: the build dedupes (src/index/dedupe.ts), and
+              // the published asset may predate that, so its count is taken
+              // AFTER the same function — otherwise the first deduped build
+              // reads as a 26% collapse and never publishes. Idempotent on an
+              // asset that was already deduped.
+              const prevCount = Number(
+                require("child_process").execFileSync(process.execPath, ["dist/index-dedupe.js", "previous/index.json"], { encoding: "utf8" }),
+              );
+              const ratio = prevCount ? cur.skillCount / prevCount : 1;
               if (ratio < MIN_COUNT_RATIO) {
                 failures.push(
-                  `skillCount ${cur.skillCount} is ${(ratio * 100).toFixed(1)}% of the published ${prev.skillCount} (< ${MIN_COUNT_RATIO * 100}%)`,
+                  `skillCount ${cur.skillCount} is ${(ratio * 100).toFixed(1)}% of the published ${prevCount} after dedupe (< ${MIN_COUNT_RATIO * 100}%)`,
                 );
               }
             } else {
