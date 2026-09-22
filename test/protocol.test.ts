@@ -155,7 +155,27 @@ describe("protocolText", () => {
     const t = flat();
     expect(t).toMatch(/low `relevance`/i);
     expect(t).toMatch(/barely matched/i);
-    expect(t).toMatch(/decline it/i);
+    expect(t).toMatch(/barely matched, say nothing/i);
+    // "decline it in silence" was the wording until `decline` became a
+    // command (commands/decline.ts). A weak band told to "decline" the row
+    // would run that command on a package nobody was asked about, and record
+    // a no the user never gave. The verb is reserved for the user's answer.
+    expect(t).not.toMatch(/decline it/i);
+  });
+
+  it("tells the model what to run on a no, and find.ts prints that line", () => {
+    // The yes has had its command since v2; a no had nothing to run, so the
+    // same package came back the next morning and the log could not tell a
+    // no from a question never asked. The label is the one find.ts prints
+    // directly under the install line (test/decline.test.ts pins its
+    // position and content); the block only says to run it.
+    const t = flat();
+    expect(t).toContain("On no, run the `On no run:` line.");
+    expect(FIND_SRC, "find.ts prints the label").toContain("On no run: ");
+    expect(FIND_SRC, "the no's command is the decline command").toContain("decline ${pkg} --matched");
+    expect(SKILL_MD.replace(/\s+/g, " "), "SKILL.md covers it").toContain("`On no run:`");
+    expect(SKILL_MD, "SKILL.md names the command").toContain("metaskill decline");
+    expect(SKILL_MD, "SKILL.md says how long a no lasts").toContain("30 days");
   });
 
   it("states when to ask as a rule with a number, not as a call the model makes", () => {
@@ -570,12 +590,12 @@ describe("skills/metaskill/SKILL.md", () => {
       expect(flatMd, `SKILL.md quotes "${s}"`).toContain(s);
       expect(flatProtocol, `protocol quotes "${s}"`).toContain(s);
     }
-    for (const re of [/low `relevance`/i, /barely matched/i, /decline it in silence/i]) {
+    for (const re of [/low `relevance`/i, /barely matched/i, /barely matched, say nothing/i]) {
       expect(flatMd, `SKILL.md matches ${re}`).toMatch(re);
       expect(flatProtocol, `protocol matches ${re}`).toMatch(re);
     }
     // ...and the old anchor is gone, not merely outnumbered.
-    for (const re of [/full match/i, /1\.0 or above/, /around 1\.0/]) {
+    for (const re of [/full match/i, /1\.0 or above/, /around 1\.0/, /decline it/i]) {
       expect(flatMd, `SKILL.md must not anchor on ${re}`).not.toMatch(re);
       expect(flatProtocol, `protocol must not anchor on ${re}`).not.toMatch(re);
     }

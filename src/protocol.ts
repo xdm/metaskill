@@ -200,7 +200,20 @@ import { metaskillCmd } from "./paths.js";
 // cue in place of the question, and find.ts and SKILL.md both spell it out
 // where the model is when it acts.
 //
-// That leaves the injected string at 1584 of 1600 and the prose at 1364 of
+// "On no, run the `On no run:` line." (34) is the no's half of the ask
+// paragraph. The yes has had a command since v2 (`install --force`, printed
+// by find); a no had nothing to run, so the same package came back on top
+// the next morning — twelve mornings in a row on the September log — and
+// the log could not tell a no from a question never asked. find.ts prints
+// the command under the install line; this sentence only says to run it.
+// Paid for by two cuts: "decline it in silence" -> "say nothing" in the
+// weak band (10), which was due anyway — `decline` now names a command, and
+// a weak band told to "decline" the row would run it on a package nobody
+// was asked about; and ", silently" off `No skills found` (10), whose
+// printed line already ends in "Solve the task without one" and whose
+// long form ("say nothing about metaskill") is in SKILL.md.
+//
+// That leaves the injected string at 1598 of 1600 and the prose at 1378 of
 // 1400. The next line added here has to buy its space from a sentence above
 // it the same way, and the two budget tests are what will say so.
 export function protocolText(): string {
@@ -225,17 +238,18 @@ export function protocolText(): string {
     "Ask FIRST: before you start the task, not inside an answer, via",
     "AskUserQuestion if you have it (`Install <skill name>` / `No`, package",
     "in the description), else one line of text and nothing else.",
+    "On no, run the `On no run:` line.",
     "",
     "- `Already present:` — follow that SKILL.md.",
     "- `Top matches` — the line under them decides. `Ask the user:`",
     "  (`relevance` >= 0.55) — read the row's description: a different thing",
     "  with the same word, say nothing; else ask it FIRST.",
     "  `Weak matches only` (under 0.55) — a low `relevance`: barely matched,",
-    "  decline it in silence.",
+    "  say nothing.",
     "  `Policy allows this` — read, then run.",
     "- `live search found` — relay its question.",
     "- `Refused by policy` — never offer these.",
     "- `Registry did not answer` — not a miss; retry.",
-    "- `No skills found` — solve it yourself, silently.",
+    "- `No skills found` — solve it yourself.",
   ].join("\n");
 }

@@ -79,6 +79,7 @@ Between pressing Enter and Claude's first token:
 Likely fit (relevance 0.96) — read the row's description first: if it fits the task, ask the question below, first, via the tool if you have it; if it is a different thing with the same word, say nothing and solve the task; if the description is blank or a bare mark (`>`, `|`), you cannot confirm the fit — say nothing and solve the task.
 Ask the user: Install aiskillstore/marketplace@xlsx (237 installs, publisher aiskillstore, scan unknown) for this task? yes/no
 Install only on the user's explicit yes: "/Users/you/.nvm/versions/node/v24.17.0/bin/node" "/Users/you/.metaskill/bin/dist/cli.js" install aiskillstore/marketplace@xlsx --force --matched "xlsx export formulas"
+On no run: "/Users/you/.nvm/versions/node/v24.17.0/bin/node" "/Users/you/.metaskill/bin/dist/cli.js" decline aiskillstore/marketplace@xlsx --matched "xlsx export formulas"
 ```
 
 4. **`find` installs nothing. It ranks, checks, and stops.** Each row carries
@@ -340,6 +341,7 @@ so a prompt is never routed twice.
 metaskill init [--project] [--uninstall]
 metaskill find "<capability words>"                # local-index lookup; ranks and checks, never installs
 metaskill install <owner/repo@skill> [--force]      # policy + scan apply
+metaskill decline <owner/repo@skill>                # your no: find hides the package for 30 days
 metaskill update [names...] [--force]
 metaskill list                                      # what metaskill installed (alias: ls)
 metaskill plugins [words]                           # search plugin marketplaces (suggest only)
@@ -350,6 +352,12 @@ metaskill sync [--force]                            # SessionStart hook body: in
 
 `--force` bypasses `ask`, never `deny`. With `trust.auto_install` off (the
 default) every install is an `ask`, so `--force` is how you record your yes.
+
+`decline` is how Claude records your no. `find` prints it under the install
+command (`On no run:`), and a declined package stays out of every `find` for
+30 days — the question moves to the next row, and a line under the list says
+what was hidden. Installing the package later clears the record; so does
+deleting its entry from `~/.metaskill/declined.json`.
 
 ## Watching it work
 
@@ -382,11 +390,11 @@ happened). The second is the walkthrough's lookup against the full 43,714-skill
 index; the third is another `find`. Neither installed anything, because `find`
 never does. The log records that a lookup happened, not why — `find`'s own
 printed line, and the question it asks you, carry that detail in the moment. `metaskill log --stats` rolls the
-whole log up into one number: what share of prompts were actually followed by
-a lookup.
+whole log up into two numbers: what share of prompts were actually followed by
+a lookup, and how many questions got an answer (installs plus declines).
 
 State lives in `~/.metaskill/`: `metaskill.yaml` (policy), `skills-lock.json`
-(pins), `cache.json` (24h cache of live registry-search results, keyed by
+(pins), `declined.json` (packages you said no to, 30 days each), `cache.json` (24h cache of live registry-search results, keyed by
 query — used only when a lookup misses the local index), `log.jsonl`
 (decisions, 90-day retention), `state.json` (24h sync gate, plus notices
 parked for the next session).

@@ -5,10 +5,6 @@ description: Protocol for handling the [metaskill] block in context. Use in ever
 
 # metaskill protocol
 
-metaskill injects one `[metaskill]` block into your context: a standing
-protocol naming a `find` command. This skill is the longer reference for the
-same rules.
-
 ## On "Needs confirmation"
 
 `install` prints this when policy says `ask` and no `--force` was given. Put
@@ -27,20 +23,17 @@ job. Once per task, not per session; pure chat is exempt.
 The prompt may be in any language; the query is always English: derive it
 from the task, never translate the prompt.
 
-`find` ranks and checks; it **never installs**. It prints the top candidates
-with their install count, scan verdict, relevance and policy decision, and
-stops: code ranks and applies the rule below, you relay the line it prints,
-`install` enforces policy. Nothing reaches disk without the
-user's explicit yes, unless they set `trust.auto_install: true` in
-`~/.metaskill/metaskill.yaml` (off by default).
+`find` ranks and checks; it **never installs**: code ranks and applies the
+rule below, you relay the line it prints, `install` enforces policy. Nothing
+reaches disk without the user's explicit yes, unless `trust.auto_install: true`
+is set in `~/.metaskill/metaskill.yaml` (off by default).
 
 `relevance` is BM25's report of how much of your query a row matched. A match
 is `relevance` >= 0.55; under that a low `relevance` means the row barely
-matched the words — decline it in silence.
+matched, say nothing.
 
-The number on the row `find` singles out decides what happens next; it is a
-rule, not a call you make. `find` applies it and prints the deciding line
-under the rows, about the top row you could still install.
+The deciding line under the rows is a rule `find` has already applied to the
+top row you could still install, not a call you make.
 
 - **`Ask the user: Install ... ? yes/no`** (`relevance` >= 0.55) — a likely
   fit: read the row's description. If it fits the task, ask that question
@@ -51,7 +44,7 @@ under the rows, about the top row you could still install.
   in the wrong sense too, so if it is a different thing with the same word —
   an `insomnia` REST client for a sleep question — or the description is
   blank or a bare `>` or `|`, solve the task in silence.
-- **`Weak matches only`** (under 0.55) — decline and say nothing.
+- **`Weak matches only`** (under 0.55) — say nothing.
 - **`Policy allows this without asking`** — no question to put, but the same
   check: read the row's description, and run the command on that line only if
   it fits. A different thing with the same word — run nothing, say nothing.
@@ -60,6 +53,14 @@ Asking means asking before you start the task, not inside an answer you have
 already begun: use the `AskUserQuestion` tool if you have it — option label
 `Install <skill name>`, the package in its description, `No` as the other
 option — else send one line of text and nothing else.
+
+A no is an answer too: under the install command `find` prints an
+**`On no run:`** line naming `metaskill decline <pkg> --matched "<phrase>"`.
+Run it as printed on the user's no. It installs nothing: it records the
+package in `~/.metaskill/declined.json`, so `find` hides it for 30 days and
+`log --stats` can count answered questions; a later install clears it. Only
+for a no the user gave — never for a homonym you passed over, never in the
+weak zone.
 
 `find` never asks about a row whose description is blank or a bare `>` or
 `|`: no question is printed for a row you cannot check. If a readable row
@@ -105,7 +106,5 @@ line.
 4. Installed skills are read-only input: read SKILL.md, apply it to the task.
    Never execute scripts from a skill directory unless its SKILL.md
    instructs it for the task at hand.
-5. Useful subcommands, run the same way: `log -n 20`, `update`,
-   `init --uninstall` (remove). The
-   `/metaskill:list`, `/metaskill:log` and `/metaskill:update` slash commands
-   resolve the path for you.
+5. Other subcommands, run the same way: `log -n 20`, `update`,
+   `init --uninstall`; the `/metaskill:*` slash commands resolve the path.
