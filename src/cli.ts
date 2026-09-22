@@ -12,12 +12,13 @@ Commands:
   find "<words>"   find a skill for a capability
   sync [--force]                   SessionStart hook body: daily update of allowlisted skills
   install <pkg> [--force] [--matched "<phrase>"]  Install one skill through policy + scan
+  decline <pkg> [--matched "<phrase>"]  Record the user's no: find hides the package for 30 days
   update [names...] [--force]      Update installed skills (allowlist without --force)
   list                             Show what metaskill has installed (alias: ls)
   plugins [words]                  Search Claude Code plugin marketplaces (suggest only)
   log [-n N] [--stats]             Show recent routing decisions, or find follow-through
 
-Files: ~/.metaskill/{metaskill.yaml,cache.json,skills-lock.json,log.jsonl}
+Files: ~/.metaskill/{metaskill.yaml,cache.json,skills-lock.json,declined.json,log.jsonl}
 `;
 
 interface Args {
@@ -91,6 +92,10 @@ async function main(): Promise<number> {
         force: flags.force === true,
         matched: typeof flags.matched === "string" ? flags.matched : undefined,
       });
+    }
+    case "decline": {
+      const { declineCommand } = await import("./commands/decline.js");
+      return declineCommand(pos[0], { matched: typeof flags.matched === "string" ? flags.matched : undefined });
     }
     case "update": {
       const { updateCommand } = await import("./commands/update.js");

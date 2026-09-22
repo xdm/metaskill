@@ -1,3 +1,4 @@
+import { removeDecline } from "../declines.js";
 import { publisherOf } from "../discover.js";
 import { findByPkg, loadIndex, normaliseQuery, scanResultFromIndex } from "../index/read.js";
 import { installSkill } from "../install.js";
@@ -85,6 +86,9 @@ export async function installCommand(pkg: string | undefined, flags: InstallFlag
     process.stderr.write(`install failed: ${res.error ?? "unknown error"}\n`);
     return 1;
   }
+  // Installing a package the user once said no to is the undo of that no —
+  // there is no other one, by design (declines.ts).
+  removeDecline(pkg);
 
   // One row per successful install, logged here rather than inside
   // installSkill: this is the only caller a human (via --force) or the

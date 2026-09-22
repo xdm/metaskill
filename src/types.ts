@@ -75,7 +75,9 @@ export interface DiscoveredLogItem {
   pkg: string;
   installs: number;
   publisher: string;
-  decision: Decision;
+  // `declined` appears only on a `decline` row (commands/decline.ts): the
+  // user's no, recorded so the log can tell it from a question never asked.
+  decision: Decision | "declined";
   scan: ScanStatus;
 }
 

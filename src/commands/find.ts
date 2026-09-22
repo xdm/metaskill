@@ -1,6 +1,7 @@
 import { loadIndex, MIN_ASK_RELEVANCE, normaliseQuery, scanResultFromIndex, search } from "../index/read.js";
 import { metaskillCmd } from "../paths.js";
 import type { IndexRecord } from "../index/types.js";
+import { activeDeclines } from "../declines.js";
 import { discoverByQuery, publisherOf } from "../discover.js";
 import { listInstalledSkills } from "../inventory.js";
 import { readLock } from "../lock.js";
@@ -181,8 +182,47 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       return 0;
     }
 
+    // Packages the user has said no to, still in force (declines.ts). They
+    // are removed from BOTH branches below before anything is ranked or
+    // asked about: the measured failure was one package put to the user on
+    // twelve mornings in a row, and a no that changes nothing on screen is
+    // a no the user stops giving. The search asks for that many extra rows,
+    // so a hidden package never shortens the list the model reads.
+    const declined = activeDeclines();
+    const isDeclined = (pkg: string): boolean => pkg in declined;
+    const hidden: string[] = [];
+    const notDeclined = <T>(xs: T[], pkgOf: (x: T) => string): T[] =>
+      xs.filter((x) => {
+        const pkg = pkgOf(x);
+        if (!isDeclined(pkg)) return true;
+        if (!hidden.includes(pkg)) hidden.push(pkg);
+        return false;
+      });
+    // Named under the list, one line per package, so the screen accounts for
+    // a row the log's `discovered` will not carry: a top-ranked package that
+    // simply vanished from the rows reads as a ranking bug, and a reader
+    // comparing today's output with yesterday's has to be told why.
+    const declinedBlock = (): string =>
+      hidden.map((pkg) => `Declined earlier, not offered: ${pkg} (until ${declined[pkg]!.until.slice(0, 10)})\n`).join("");
+    // The command for a no, printed under the command for a yes and only
+    // beside a question: the yes has had its command since v2, and a no with
+    // no command to run was a no nobody could record.
+    const declineLine = (pkg: string): string => `On no run: ${metaskillCmd()} decline ${pkg} --matched "${q}"\n`;
+
     const index = loadIndex(opts.index);
-    let hits = index ? search(index, q, 5) : [];
+    const declinedCount = Object.keys(declined).length;
+    let hits = index ? notDeclined(search(index, q, 5 + declinedCount), (h) => h.record.pkg).slice(0, 5) : [];
+
+    // Every local match is one the user has already declined. The live
+    // fallback below would only go looking for the same packages; and
+    // `No skills found` is the label the protocol already tells the model to
+    // act on (solve it yourself), so it is reused, with the hidden packages
+    // named under it.
+    if (!hits.length && hidden.length) {
+      process.stdout.write(`[metaskill] No skills found for "${q}". Solve the task without one.\n${declinedBlock()}${pluginLine}`);
+      logFind([], []);
+      return 0;
+    }
 
     // Long tail: the index is a snapshot, so fall back to one live search.
     if (!hits.length) {
@@ -210,12 +250,15 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       // some calls will not come back, and that fact must not reach the model
       // disguised as "no such skill exists".
       let liveFailed = false;
-      const cands = await discoverByQuery(q, {
-        timeoutMs: 4_000,
-        onFailure: () => {
-          liveFailed = true;
-        },
-      });
+      const cands = notDeclined(
+        await discoverByQuery(q, {
+          timeoutMs: 4_000,
+          onFailure: () => {
+            liveFailed = true;
+          },
+        }),
+        (c) => c.pkg,
+      );
       if (!cands.length) {
         // A lookup that never answered is not the same fact as a registry that
         // answered "nothing". Printing `No skills found` for both would have
@@ -227,7 +270,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
           logFind([], []);
           return 0;
         }
-        process.stdout.write(`[metaskill] No skills found for "${q}". Solve the task without one.\n${pluginLine}`);
+        process.stdout.write(`[metaskill] No skills found for "${q}". Solve the task without one.\n${declinedBlock()}${pluginLine}`);
         logFind([], []);
         return 0;
       }
@@ -246,7 +289,8 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
           // path led to this confirmed install, the lock should end up with
           // the phrase that found it, or alreadyPresent's short-circuit only
           // works for half of `find`'s outcomes.
-          `On the user's explicit yes run: ${metaskillCmd()} install ${top.pkg} --force --matched "${q}"\n${pluginLine}`,
+          `On the user's explicit yes run: ${metaskillCmd()} install ${top.pkg} --force --matched "${q}"\n` +
+          `${declineLine(top.pkg)}${declinedBlock()}${pluginLine}`,
       );
       // The live registry never returns a scan verdict (spec §10 open
       // question, task 14 self-review's known gap) — "unavailable" is a fact
@@ -304,7 +348,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       // SKILL.md already tell the model how to act on (solve it yourself);
       // inventing a label for this case would leave it improvising.
       process.stdout.write(
-        `[metaskill] No skills found for "${q}". Solve the task without one.\n${deniedBlock}${pluginLine}`,
+        `[metaskill] No skills found for "${q}". Solve the task without one.\n${deniedBlock}${declinedBlock()}${pluginLine}`,
       );
       logFind([], [...askable, ...denied].map(toDiscovered)); // askable is empty here: stdout order is the refused block
       return 0;
@@ -480,7 +524,8 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     // sentence under it would be a second, contradictory one.
     const installLine = !asked
       ? ""
-      : `Install only on the user's explicit yes: ${metaskillCmd()} install ${asked.r.pkg} --force --matched "${q}"\n`;
+      : `Install only on the user's explicit yes: ${metaskillCmd()} install ${asked.r.pkg} --force --matched "${q}"\n` +
+        declineLine(asked.r.pkg);
     process.stdout.write(
       // No adjudication in the header. It used to open by asking the model to
       // rule on whether any row fitted, and to fall back on itself if none
@@ -505,7 +550,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
         // query into the lock on a confirmed install, so a repeat of it
         // short-circuits here next time via alreadyPresent's lock check above
         // — see install.ts.
-        `\n${verdictLine}${installLine}${deniedBlock}${pluginLine}`,
+        `\n${verdictLine}${installLine}${deniedBlock}${declinedBlock()}${pluginLine}`,
     );
     logFind([], [...askable, ...denied].map(toDiscovered));
     return 0;
