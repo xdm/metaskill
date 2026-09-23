@@ -18,7 +18,7 @@
     },
     {
       "query": "hydration tracking",
-      "pkg": "kostja94/marketing-skills@analytics-tracking",
+      "pkg": "coreyhaines31/marketingskills@analytics",
       "homonym": true
     },
     {
@@ -38,7 +38,7 @@
     },
     {
       "query": "stress management",
-      "pkg": "mattpocock/skills@grilling",
+      "pkg": "jakubkrehel/skills@break",
       "homonym": true
     },
     {
@@ -93,7 +93,7 @@
     },
     {
       "query": "habit tracking",
-      "pkg": "kostja94/marketing-skills@analytics-tracking",
+      "pkg": "coreyhaines31/marketingskills@analytics",
       "homonym": true
     },
     {
@@ -138,12 +138,12 @@
     },
     {
       "query": "career change",
-      "pkg": "paramchoudhary/resumeskills@career-changer-translator",
-      "homonym": false
+      "pkg": "mbfinotti/revops-skills@revops-career",
+      "homonym": true
     },
     {
       "query": "salary negotiation",
-      "pkg": "anthropics/knowledge-work-plugins@call-summary",
+      "pkg": "affaan-m/ecc@network-interface-health",
       "homonym": true
     },
     {
@@ -203,7 +203,7 @@
     },
     {
       "query": "home organization",
-      "pkg": "affaan-m/ecc@homelab-network-setup",
+      "pkg": "senclaw-cdn.italent.cn@beisen-organization",
       "homonym": true
     },
     {

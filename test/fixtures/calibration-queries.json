@@ -4,10 +4,10 @@
     {
       "query": "content marketing article writing",
       "deserves": true,
-      "relevance": 0.89,
-      "pkg": "kostja94/marketing-skills@article-content",
+      "relevance": 0.85,
+      "pkg": "affaan-m/ecc@article-writing",
       "outcome": "ask",
-      "asked": "kostja94/marketing-skills@article-content"
+      "asked": "affaan-m/ecc@article-writing"
     },
     {
       "query": "linkedin content writing proptech",
@@ -20,7 +20,7 @@
     {
       "query": "seo blog article writing",
       "deserves": true,
-      "relevance": 0.75,
+      "relevance": 0.74,
       "pkg": "affaan-m/ecc@article-writing",
       "outcome": "ask",
       "asked": "affaan-m/ecc@article-writing"
@@ -36,7 +36,7 @@
     {
       "query": "real estate feed api",
       "deserves": false,
-      "relevance": 0.43,
+      "relevance": 0.44,
       "pkg": "larksuite/cli@lark-im",
       "outcome": "silent",
       "asked": null
