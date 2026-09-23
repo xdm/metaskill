@@ -25,7 +25,7 @@ function tablePolicy(): Policy {
   return p;
 }
 
-describe("policy.decide (spec 4.5 decision table)", () => {
+describe("policy.decide (the decision table)", () => {
   const p = tablePolicy(); // allowlist: anthropics, vercel-labs; min_installs 5000
 
   it("deny_publishers -> deny, even when allowlisted or popular", () => {
@@ -36,10 +36,10 @@ describe("policy.decide (spec 4.5 decision table)", () => {
 
   // INVERTED. This used to assert "allowlisted publisher -> auto without a
   // scan" and, in doing so, pinned the defect: an allowlisted publisher was
-  // auto-installed on the ABSENCE of a verdict. Ruling 4 mutation-tested the
+  // auto-installed on the ABSENCE of a verdict. Mutation-testing showed the
   // allowlist against dirty/estimated/advisories but never against no scan at
   // all, so `metaskill install anthropics/skills@xlsx` installed, unattended,
-  // a package the shipped index marks dirty. Spec 4.1: unknown maps to ask,
+  // a package the shipped index marks dirty. Unknown maps to ask,
   // never auto.
   it("allowlisted publisher with no scan -> ask, never auto", () => {
     const v = decide(cand("anthropics", 0), skipped, p);

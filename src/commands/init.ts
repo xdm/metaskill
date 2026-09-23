@@ -27,11 +27,9 @@ function commandsDstDir(): string {
 // This is what makes `npx @xdma/metaskill init` a safe permanent setup.
 //
 // Returns whether index-snapshot.json was copied. It is the offline search
-// floor `find` reads before the first `sync` — shipped in the npm package,
-// but gitignored (and `npm run snapshot`-built) in the checkout, so its
-// absence is routine, not an error; initCommand turns this into a warning
-// rather than copying it silently or letting a re-init delete a prior copy
-// (this file was excluded from the loop below three times before).
+// floor `find` reads before the first `sync` — shipped in the npm package
+// but built (not committed) in the checkout, so its absence is a warning,
+// not an error, and a re-init never deletes a prior copy.
 function installSelfCopy(): boolean {
   const src = packageRoot();
   const dst = stablePkgDir();
@@ -106,7 +104,7 @@ export interface InitFlags {
   force?: boolean;
 }
 
-// `metaskill init` (spec 4.1): hooks + policy template + metaskill SKILL.md.
+// `metaskill init`: hooks + policy template + metaskill SKILL.md.
 // Idempotent; --uninstall removes hooks and the SKILL.md but leaves
 // ~/.metaskill (policy, log, lock) untouched.
 export async function initCommand(flags: InitFlags): Promise<number> {

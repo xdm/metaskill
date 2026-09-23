@@ -56,7 +56,7 @@ describe("parseFindOutput", () => {
   });
 });
 
-describe("discover cache (24h, spec 4.2.4)", () => {
+describe("discover cache (24h)", () => {
   let home: string;
   const saved = process.env.METASKILL_HOME;
   beforeEach(() => {

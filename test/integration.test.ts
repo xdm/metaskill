@@ -128,7 +128,7 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
     // globally, with nobody asked — on junk queries too, because BM25 reports
     // how much of a query a row matched and cannot judge whether the row
     // answers the task. Code ranks, the model picks, `install` enforces
-    // policy (spec §4.4). This row is the most trusted case there is —
+    // policy. This row is the most trusted case there is —
     // allowlisted publisher, clean scan, 999999 installs — and it still only
     // gets printed.
     const home = freshHome("find-auto");
@@ -841,7 +841,7 @@ describe("find end-to-end (stubbed skills CLI, custom --index)", () => {
 // corpus does to "insomnia help" or "stress management" — and that is where
 // the interesting failure lives: a rare query word carries high idf, so the
 // wrong sense of it outranks everything, and BM25 has no way to know. The
-// fixture is the measurement; the wording change in task 18 is the response
+// fixture is the measurement; the wording change is the response
 // to it, and this test is what tells us when the measurement moves.
 //
 // The snapshot is gitignored (built by `npm run snapshot` at publish time),
@@ -1125,7 +1125,7 @@ describe("find: ranking is a signal, not an action", () => {
   });
 });
 
-describe("find: logs what it found, not just the query (task 14)", () => {
+describe("find: logs what it found, not just the query", () => {
   // A user reading `domains=[find:linkedin post copywriting] 54ms` on its own
   // read it as "found nothing" — `logFind` wrote `discovered: []`
   // unconditionally, so the log could not answer the first question anyone
@@ -1509,7 +1509,7 @@ describe("the packaged snapshot is the offline floor", () => {
   });
 });
 
-describe("init end-to-end (spec 4.1)", () => {
+describe("init end-to-end", () => {
   it("registers hooks preserving existing ones, idempotently; uninstall reverses it", async () => {
     const home = freshHome("init");
     const settingsFile = path.join(home, ".claude", "settings.json");
@@ -1636,7 +1636,7 @@ describe("init end-to-end (spec 4.1)", () => {
   });
 });
 
-describe("sync end-to-end (spec 4.3)", () => {
+describe("sync end-to-end", () => {
   function seedInstalled(home: string, skill: string, version: string) {
     const dir = path.join(home, ".agents", "skills", skill);
     fs.mkdirSync(dir, { recursive: true });
@@ -1729,7 +1729,7 @@ describe("sync end-to-end (spec 4.3)", () => {
   });
 });
 
-describe("update/sync: a dirty scan blocks even an allowlisted package (spec §7 Defect 1)", () => {
+describe("update/sync: a dirty scan blocks even an allowlisted package", () => {
   function seedInstalled(home: string, skill: string, version: string) {
     const dir = path.join(home, ".agents", "skills", skill);
     fs.mkdirSync(dir, { recursive: true });
@@ -1825,7 +1825,7 @@ describe("update/sync: a dirty scan blocks even an allowlisted package (spec §7
   });
 });
 
-describe("manual install: deny is final (spec §5)", () => {
+describe("manual install: deny is final", () => {
   it("--force bypasses ask but never deny", async () => {
     const home = freshHome("deny");
     fs.mkdirSync(path.join(home, ".metaskill"), { recursive: true });
@@ -1843,7 +1843,7 @@ describe("manual install: deny is final (spec §5)", () => {
   });
 });
 
-describe("manual install reads the index verdict, for every publisher (spec §7 Defect 2)", () => {
+describe("manual install reads the index verdict, for every publisher", () => {
   function seedIndex(home: string, skills: unknown[]): void {
     fs.mkdirSync(path.join(home, ".metaskill"), { recursive: true });
     fs.writeFileSync(path.join(home, ".metaskill", "index.json"), JSON.stringify(indexFile(skills)));
@@ -1923,8 +1923,8 @@ describe("list command", () => {
     // Manual install has no --domain flag any more — no query phrase to
     // record — so this entry's MATCHED column renders "-".
     //
-    // The index carries the verdict `install` now decides on (spec §7 Defect
-    // 2), so it has to exist: without it the command falls back to the live
+    // The index carries the verdict `install` decides on (the runtime reads
+    // a field, it downloads no tarball), so it has to exist: without it the command falls back to the live
     // tarball scan, which this suite must never reach.
     fs.mkdirSync(path.join(home, ".metaskill"), { recursive: true });
     fs.writeFileSync(
@@ -2055,7 +2055,7 @@ describe("packaged assets", () => {
     }
   });
 
-  it("SKILL.md stays within the 1500-token budget (spec 4.8)", () => {
+  it("SKILL.md stays within the 1500-token budget", () => {
     const md = fs.readFileSync(path.join(ROOT, "skills", "metaskill", "SKILL.md"), "utf8");
     // ~4 chars/token upper bound: 6000 chars ≈ 1500 tokens
     expect(md.length).toBeLessThanOrEqual(6000);

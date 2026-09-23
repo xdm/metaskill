@@ -431,9 +431,12 @@ parked for the next session).
 
 ## Development
 
+The reasoning behind the main decisions, with the measurements, is in
+[DESIGN.md](DESIGN.md).
+
 ```
 npm install
-npm test          # build + 246 unit/integration tests (stubbed skills CLI, temp HOME)
+npm test          # build + 330+ unit/integration tests (stubbed skills CLI, temp HOME)
 ```
 
 The registry index (`index.json`) is built separately from the CLI and is not

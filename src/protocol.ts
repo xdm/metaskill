@@ -1,221 +1,28 @@
 import { metaskillCmd } from "./paths.js";
 
-// v1 shipped this protocol in a plugin SKILL.md whose body only loads when
-// something invokes it — nothing ever did — and phrased the per-prompt line as
-// opt-out ("*If* a specialized skill could help…"): used 8 times in 244
-// classification misses. This text is injected into every session by `sync`,
-// and every sentence in it is load-bearing against that failure:
+// The standing protocol `sync` injects at the start of every session. Every
+// sentence is there for a measured reason — the rationale and the numbers
+// are in DESIGN.md — and the whole block is budgeted: under 1400 chars of
+// prose and under 1600 injected, enforced by test/protocol.test.ts. A line
+// added here has to buy its space from a line above it.
 //
-//   - The trigger is "every task", with a named exemption. A trigger the model
-//     has to adjudicate ("if a skill would help", "a task a skill would do
-//     better") is answered "no" by a model whose honest prior is that it can
-//     handle the task — the conditional does the same work as v1's, in an
-//     imperative's clothes.
-//   - It says to run it even when sure. That is the instruction the measured
-//     3% follow-through actually calls for, and v1 never gave it.
-//   - Scope is explicit. "For this session" reads as "already did that" by the
-//     third task in a long session.
-//   - No cost or privacy reassurance. `find` is ~0.4s on a local index hit but
-//     goes to the network on a miss (20s measured, ending in an install
-//     timeout), so "costs milliseconds / offline" is disconfirmed on first
-//     contact — and answering an objection the reader did not raise plants it.
-//   - Every quoted label is a string find.ts actually prints; test/protocol
-//     .test.ts cross-checks them against that file.
-//   - It says find does NOT install, and names the one setting that changes
-//     that. The command used to install the top-ranked hit unattended, and
-//     this block used to warn about it; both are gone. Code ranks, the model
-//     picks, `install` enforces policy (spec §4.4) — so the ask-the-user rule
-//     is now true of the command as a whole, and saying so is what stops a
-//     model reporting an install that never happened.
-//   - It states WHEN to ask as a rule with a number in it, not as something
-//     the model gets to decide. "Which row, if any, fits the task? If none
-//     does, solve it yourself" is a slot the model fills with its own
-//     prior, and on the first real v2 lookup it filled it with "none": five
-//     `ask` rows, a 1.16-relevance top row that plainly fitted, and nothing
-//     put to the user. A reader asked to decide whether to ask has already
-//     been handed the option not to. Prose alone did not hold either: with
-//     the rule stated only here, the ready-made question still printed at
-//     relevance 0.08, and a mechanism that costs nothing exactly where the
-//     rule says stop is not a rule. So `find` applies the threshold itself
-//     (read.ts's MIN_ASK_RELEVANCE) and prints the line that follows from it
-//     — `Ask the user:` under a `Likely fit` cue, or `Weak matches only` —
-//     and this block tells the model that those lines, not its own reading
-//     of the list, say what happens next. The number quoted here is the one
-//     in MIN_ASK_RELEVANCE; test/protocol.test.ts imports the constant and
-//     fails if the text drifts from it.
-//   - TWO zones, not three. Between them there used to be a middle band,
-//     0.5-1.0, whose line said "decide whether it fits, then ask" — the last
-//     slot in which the model got to rule on whether to ask at all.
-//     On 2026-09-04 the user's own five `find` calls ALL landed in it and
-//     produced no question; four of the five deserved one. Three review
-//     rounds ended the same way: a slot that permits skipping is used to
-//     skip. What replaced it was measured, not chosen — the 52 calibration
-//     queries and both curves are in read.ts's comment beside the constant —
-//     and what the middle band was hedging against is handled above the line
-//     by the description check, which is a check, not a discretion.
-//   - The asking zone reads the row's description before it relays anything,
-//     and that is a CHECK, not the discretion the threshold took away. A
-//     probe of 47 everyday life and work queries plus the five real ones
-//     found that 72% of the rows clearing the threshold do NOT deserve a
-//     question, and they are homonyms a lexical score cannot see: "insomnia
-//     help" -> a REST client called Insomnia, "stress management" ->
-//     stress-test (load testing), "time management" -> a scheduler
-//     component, "language learning" -> an LLM trainer. A rare query word
-//     carries high idf, so the WRONG sense of it scores HIGH — no threshold
-//     separates them, which is exactly why this check sits above the line
-//     instead of being folded into it. The model can tell them apart from
-//     the description printed on the row; BM25 cannot. So the zone names one
-//     specific question with both outcomes stated — does this description
-//     fit the task: ask, or say nothing — rather than "decide whether to
-//     bother", which is the slot the first incident filled with "none".
-//     test/fixtures/everyday-queries.json and calibration-queries.json are
-//     that probe, kept as golden fixtures against the shipped snapshot.
-//   - A row with no description to read is skipped, not asked about, and
-//     `find` falls to the next readable row above the line rather than
-//     silencing the query: 129 of the snapshot's 4,835 records carry no
-//     description at all (registry sources that report installs and nothing
-//     else), and `linkedin outreach prospecting` puts one of them on top
-//     with a genuine match directly beneath it. Only when nothing above the
-//     line can be read does the block's promise of a question go unkept, and
-//     find.ts says so in the line where the question would have been.
-//   - The third line under `Top matches` is `Policy allows this`, and it is
-//     here because the case used to print nothing at all. With
-//     `trust.auto_install: true` every row can come back `auto`, and then
-//     find had no question to hand over and printed no line — under a header
-//     promising that the line under the rows decides. A model told to act on
-//     a line that never comes acts on its own reading of the list, which is
-//     the failure this whole block is against. So find prints the concrete
-//     install command for that row (no `--force`: the knob IS the standing
-//     yes) and this line says to run it. One short line, because the printed
-//     line already carries the command and the row it names; the reference
-//     (SKILL.md) carries the rest. The description check binds that line too
-//     — policy reads a publisher, an install count and a scan verdict, none
-//     of which can see that `insomnia` is a REST client — but the words for
-//     it do not fit here, so they live where the model is when it acts:
-//     find.ts prints the same cue above the command as it prints above a
-//     question, and SKILL.md carries the long form. What this bullet does
-//     carry is the ORDER — "read, then run", not "run it". This block is
-//     read at session start, BEFORE any tool result, and this is the one
-//     path that runs unattended: a model that internalised "run it" here can
-//     act on the label alone, without ever reaching the cue that says when
-//     not to. Two words, and they buy the only sequencing the label can
-//     carry on its own.
-//   - The threshold applies to `Top matches` only, and `live search found`
-//     gets its own line. A registry hit has no relevance to place — no ranked
-//     list to place it in — and it is always askable, so it always prints a
-//     question. Folded into one bullet with `Top matches`, the gate read as
-//     applying to a branch that prints no number, which is guidance the
-//     output cannot honour.
-//   - It says what a low `relevance` means and what to do about it. Removing
-//     the hard floor made the model's reading the only filter, and `find`
-//     prints a number the model has never been told how to read — beside a
-//     policy reason ("publisher anthropics is allowlisted, scan clean") that
-//     reads as an endorsement. Measured: `find "tell me a joke"` returns a
-//     0.53-relevance account-research skill wearing exactly that reason. The
-//     equivalent sentence in SKILL.md is not enough on its own: SKILL.md
-//     loads on invocation, this block loads at session start.
-//   - It says what to name when no capability phrase is obvious ("fix this
-//     failing test" has none), because "I cannot form a query" is the next
-//     shape the escape hatch takes once "I've got this" is closed. It offers
-//     that as guidance and NOT as a gate: an earlier draft ended the clause
-//     with "skip only when nothing like that is in play", which handed back
-//     the very discretion "run it even when you are sure" forbids —
-//     eleven lines under that sentence. The enumeration must never terminate
-//     in a condition the model can answer "no" to. It names life and work
-//     domains, not only IT: the list used to read "a format, framework, or
-//     craft like SEO", which tells a model this command is for engineering
-//     tasks — and the same probe found the registry answering "meal prep",
-//     "salary negotiation" and "study techniques" too. A query never formed
-//     is the one miss no threshold can catch. The list is not exhaustive and
-//     cannot be at this length; it is priced per word, so each one earns its
-//     place off the probe. `writing` covers two of the four fixture queries
-//     that clear the threshold against the shipped snapshot (`email
-//     writing`, `resume writing`) and is roughly a quarter of measured
-//     everyday AI use; it is here in place of `travel`, which clears nothing.
-//   - It does NOT warn against `npx skills add`. That duplicates SKILL.md
-//     Rule 2 and spends scarce lines naming a bypass to a reader who was not
-//     looking for one. Note what is and is not enforced: metaskill's OWN
-//     install path cannot be talked past (a `deny` there survives every flag),
-//     but nothing stops a model running the skills CLI directly — there is no
-//     PreToolUse hook, so the ban on doing so is instruction, not enforcement.
-//   - Asking is defined once, above the zones, and the asking zone inherits
-//     it: an ask happens BEFORE the task, and it is a question the user is
-//     given a turn to answer. Second real v2 use: a row at 0.85, correctly
-//     read as fitting, and the question printed as the last line of a
-//     paragraph that had already begun answering the task — the user did not
-//     experience it as a question at all. Two gaps in this text, not model
-//     whim. The old middle band said "decide, then ask", which is satisfied
-//     by asking at the end of an answer; the rule now says FIRST wherever it
-//     is stated, here and in find.ts's own cue, or the two disagree in the
-//     decision turn. And nothing said
-//     HOW: Claude Code hands the model an AskUserQuestion tool that renders a
-//     real yes/no choice, and it used prose instead. The instruction is
-//     conditional because the tool is — it exists in an interactive session,
-//     not in every harness — and the fallback names the property that failed:
-//     one line of text and NOTHING else in that turn. The option LABEL is the
-//     skill name, not the package: real packages here run to 55 chars
-//     (`ailabs-393/ai-labs-claude-skills@nutritional-specialist`), which no
-//     option label renders, so the package goes in the option's description
-//     where the user can still read what they are saying yes to.
-//   - The query is "not translated". Both live incidents arrived as Russian
-//     prompts, and a model that translates the prompt instead of naming the
-//     capability searches for the user's phrasing rather than the artefact.
-//     The contrast is two words and it earns them.
-//   - `Registry did not answer` is listed separately from `No skills found`.
-//     A live lookup that timed out is not evidence that no skill exists, and a
-//     model given one label for both facts will report a coverage gap it never
-//     established.
-//
-// Budget: the PROSE stays under 1400 chars (test/protocol.test.ts measures it
-// with both absolute paths removed), and the injected string under 1600. The
-// paths are not something the wording can trade against — process.execPath is
-// 86 chars on the author's machine and cliEntryPath() is longer for a
-// plugin-cache install than in this checkout. Everything above is paid for:
-// the ask-first paragraph was bought back out of the language sentence, the
-// skill-kind enumeration and the tail of each branch bullet, so nothing here
-// is spare. Anything added later has to be traded the same way.
-//
-// What the description check and the life/work enumeration cost, and what
-// paid for them: the "Act on what it prints:" lead-in (23 chars — the
-// bullets are labels `find` prints and imperatives to obey, which is what
-// the line said), "no band:" from the `live search found` bullet (that
-// bullet's separateness already carries it), "read and follow" -> "follow",
-// "in force for every task" -> "every task", "always English" -> "English",
-// "that check is its job" -> "checking is its job", "the line under the
-// rows" -> "the line under them", "pure chat is exempt" -> "pure chat
-// exempt", and "so decline it" -> "decline it". The homonym gloss is here in
-// its shortest form ("a different thing with the same word"); its worked
-// examples did not fit and live in the two unbudgeted documents — find.ts's
-// cue, which the model reads in the decision turn, and SKILL.md. This block
-// keeps the rule in its shortest true form: read the description, then ask
-// or say nothing.
-//
-// The `Policy allows this` line (33 chars with its indent and newline) was
-// paid for out of what those trades left over, and "read, then run" (8 more)
-// was paid for by dropping ", or no description" from the >= 0.55 bullet
-// (19). That clause guarded a line that cannot print: `find` picks the first
-// READABLE row at or above the threshold (find.ts's `chosen`, pinned by two
-// tests in test/protocol.test.ts), so an `Ask the user:` line never names a
-// row whose description is blank or a bare mark — that case prints its own
-// cue in place of the question, and find.ts and SKILL.md both spell it out
-// where the model is when it acts.
-//
-// "On no, run the `On no run:` line." (34) is the no's half of the ask
-// paragraph. The yes has had a command since v2 (`install --force`, printed
-// by find); a no had nothing to run, so the same package came back on top
-// the next morning — twelve mornings in a row on the September log — and
-// the log could not tell a no from a question never asked. find.ts prints
-// the command under the install line; this sentence only says to run it.
-// Paid for by two cuts: "decline it in silence" -> "say nothing" in the
-// weak band (10), which was due anyway — `decline` now names a command, and
-// a weak band told to "decline" the row would run it on a package nobody
-// was asked about; and ", silently" off `No skills found` (10), whose
-// printed line already ends in "Solve the task without one" and whose
-// long form ("say nothing about metaskill") is in SKILL.md.
-//
-// That leaves the injected string at 1598 of 1600 and the prose at 1378 of
-// 1400. The next line added here has to buy its space from a sentence above
-// it the same way, and the two budget tests are what will say so.
+// The shape it keeps:
+//   - The trigger is "every task", stated as an imperative with one named
+//     exemption. A trigger the model has to adjudicate is answered "no".
+//   - It says find never installs, and names the one setting that changes
+//     that, so the model never reports an install that did not happen.
+//   - When to ask is a rule with a number in it, applied by `find` itself;
+//     the block tells the model to act on the line `find` prints, not on its
+//     own reading of the list. Two zones, no middle band.
+//   - The one silence above the line is the description check: a homonym a
+//     lexical score cannot see. Every label quoted here is one find.ts prints.
+//   - Asking means first, before the task, as a real question — the
+//     AskUserQuestion tool when the harness has it, else one bare line.
+//   - A no has a command too (`On no run:`), so it is recorded and not
+//     repeated.
+//   - The query is English and names the artefact or domain, not the
+//     action; the list of kinds names everyday domains, not only engineering.
+//   - A timed-out registry lookup is a separate label from a miss.
 export function protocolText(): string {
   return [
     "[metaskill] Standing protocol — every task, this session.",

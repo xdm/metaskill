@@ -4,11 +4,9 @@
 //
 // The one YAML construct it does read is the block scalar — `description: |`,
 // `>`, `>-`, `|-`, `|+`, `>+` — because a fifth of the registry writes its
-// descriptions that way (8,971 of 43,860 records when this was measured) and
-// keeping the marker is worse than useless: the row then ranks on its name
-// alone and tells its reader nothing. Keys are still recognised at column 0
-// only, so a block's body — indented by definition — can never be mistaken
-// for the next key, colons and all.
+// descriptions that way, and keeping the marker leaves a row that ranks on
+// its name alone. Keys are recognised at column 0 only, so a block's body —
+// indented by definition — can never be mistaken for the next key.
 const BLOCK_HEADER = /^([|>])([+-]?)$/;
 
 export function parseFrontmatter(md: string): Record<string, string> {

@@ -28,25 +28,17 @@ export function locateInstalled(skill: string): string | undefined {
   return undefined;
 }
 
-// Wraps `skills add <pkg> -g -y` (spec 4.2.6 / 4.4). Both callers now pass an
-// explicit 120s — `install` and `find` alike, since the unattended path was
-// measured timing out at 20.17s under the old 20s default and it is the one
-// nobody is watching. On timeout the caller downgrades the candidate to
-// `ask`; it never blocks the hook longer. Records the install in
-// ~/.metaskill/skills-lock.json,
-// `domain` and all — the (already-normalised) query phrase that found it, via
-// `install`'s own `--matched` flag, or nothing for a manual install that
-// passed none. `metaskill list` shows it under MATCHED, and it is also read
-// back: find.ts's alreadyPresent() compares a later query against this exact
-// field to short-circuit a repeat of the phrase that found this skill.
+// Wraps `skills add <pkg> -g -y` and records the install in
+// ~/.metaskill/skills-lock.json, with `domain` = the normalised phrase that
+// found it (from `install --matched`), which `list` shows under MATCHED and
+// find.ts's alreadyPresent() reads back.
 export async function installSkill(
   pkg: string,
   domain: string | undefined,
   opts: InstallOpts = {},
 ): Promise<InstallResult> {
-  // The caller's budget wins. The env var is the default under it — the seam
-  // tests use to prove an explicit budget is the one actually in force — and
-  // the spec's original 20s is the default under that.
+  // The caller's budget wins; the env var (a test seam) is the default under
+  // it. A real install was measured past 20s, so callers pass 120s.
   const timeoutMs = opts.timeoutMs ?? Number(process.env.METASKILL_INSTALL_TIMEOUT_MS ?? 20_000);
   const skill = skillNameOf(pkg);
 

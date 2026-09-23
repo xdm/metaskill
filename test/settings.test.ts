@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { addHooks, hookCommand, isMetaskillHookCommand, removeHooks, type Settings } from "../src/settings.js";
 
-describe("settings hooks merge (spec 4.1)", () => {
+describe("settings hooks merge", () => {
   it("adds both hooks to empty settings", () => {
     const s = addHooks({});
     const ups = s.hooks!.UserPromptSubmit!;

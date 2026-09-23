@@ -2,19 +2,11 @@ import path from "node:path";
 import { metaskillHome } from "./paths.js";
 import { readJsonFile, writeJsonFile } from "./store.js";
 
-// A "no" to `Ask the user: Install <pkg> ...?` used to leave no trace: the
-// next `find` with a similar phrase put the same package back on top and the
-// same question to the user again — measured on the 2026-09 log as one
-// package asked about on 12 mornings in a row. This file is where a no is
-// kept. It is keyed by PACKAGE, not by (package, phrase): the repeats arrive
-// under slightly different phrasings of the same task, and a no to a skill
-// is about the skill.
-//
-// It expires. The registry moves — a thin skill gets a real description, an
-// install count, a clean scan — and a no from a month ago should not hide it
-// for good. 30 days is long enough to outlast a project's daily routine and
-// short enough that nothing is buried. A successful `install <pkg>` removes
-// the entry (install.ts): installing the thing is the natural undo.
+// Where a no to `Ask the user: Install <pkg> ...?` is kept, so `find` does
+// not put the same package to the user again. Keyed by package, not by
+// phrase: the repeats arrive under different phrasings of the same task. It
+// expires, because the registry moves and a month-old no should not hide a
+// skill for good; a later `install <pkg>` removes the entry.
 export const DECLINE_DAYS = 30;
 
 export interface DeclineEntry {
@@ -53,8 +45,7 @@ export function removeDecline(pkg: string): void {
 }
 
 // Only the entries still in force. Expired rows stay in the file until the
-// next write — nothing reads them, and rewriting the file on every `find`
-// would put a write on the hot path for nothing.
+// next write; nothing reads them.
 export function activeDeclines(now: Date = new Date()): DeclinesFile {
   const out: DeclinesFile = {};
   for (const [pkg, e] of Object.entries(readDeclines())) {

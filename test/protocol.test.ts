@@ -259,7 +259,7 @@ describe("protocolText", () => {
     );
     // ...and where nothing above the line can be read, the cue says so
     // INSTEAD of the question: a stop instruction with a ready-made
-    // `Ask the user:` line under it is the shape ruling 44 removed from the
+    // `Ask the user:` line under it is the shape already removed from the
     // weak zone. One helper decides both the sentence and the suppression, so
     // they cannot drift.
     expect(FIND_SRC, "the unreadable case prints no question").toContain("so no question is printed");

@@ -45,23 +45,16 @@ function emit(context: string): void {
   );
 }
 
-// SessionStart hook body (spec 4.3), at most once per 24h. The skills CLI has
-// no `check` command (verified v1.5.23), so: allowlisted publishers get
-// `skills update <names> -g -y`; everything else gets a notice line.
+// SessionStart hook body, at most once per 24h. The skills CLI has no
+// `check` command, so: allowlisted publishers get `skills update <names>
+// -g -y`; everything else gets a notice line.
 export async function syncCommand(opts: { force?: boolean } = {}): Promise<number> {
-  // The protocol is the product, so it goes out before the 24h gate, before the
-  // lock is read, and before any network call: neither an early return, nor a
-  // 12-20s index download, nor a hook killed mid-download may cost the session
-  // its protocol. Exactly one emit() per run — a second JSON line on stdout is
-  // not a documented hook contract — so notices about the slow work below are
-  // parked in state.json and ride out on the NEXT session's emit.
-  //
-  // readState() is the only work that happens before emit(), and it sat
-  // outside this guard: readJsonFile swallows a read or parse error, but a
-  // state.json holding the literal `null` parses fine and then throws on
-  // `.pendingNotices`, and statePath() itself throws with no resolvable home.
-  // Either one cost the session its protocol. Now the worst case is losing
-  // one session's parked notices.
+  // The protocol goes out first — before the 24h gate, the lock, and any
+  // network call — so nothing slow or failing can cost the session its
+  // protocol. Exactly one emit() per run (a second stdout line is not a hook
+  // contract), so notices about the slow work below are parked in state.json
+  // and ride out on the next session's emit. Even readState() is guarded: a
+  // state.json holding `null` used to throw here.
   let state: StateFile = {};
   try {
     const read: unknown = readState();
@@ -93,10 +86,9 @@ export async function syncCommand(opts: { force?: boolean } = {}): Promise<numbe
     const entries = Object.values(lock);
     if (!entries.length) return 0;
 
-    // Spec §7 Defect 1 reaches here too: the allowlist lowers the install
-    // threshold, it never waives the scan, and this path runs unattended on a
-    // timer. `index` is whatever refreshIndex() above just landed, or the
-    // packaged snapshot, or null — blockedByScan treats all three safely.
+    // The allowlist lowers the install threshold, it never waives the scan —
+    // and this path runs unattended. `index` may be the fresh download, the
+    // packaged snapshot, or null; blockedByScan treats all three safely.
     const index = loadIndex();
     const allowlisted = entries.filter(
       (e) => policy.trust.allowlist.includes(publisherOf(e.pkg)) && !blockedByScan(index, e.pkg),

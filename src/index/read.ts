@@ -7,97 +7,34 @@ import { INDEX_SCHEMA_VERSION, type IndexFile, type IndexRecord } from "./types.
 export interface Hit {
   record: IndexRecord;
   score: number;
-  // The BM25 score as a fraction of the best score this query could possibly
-  // reach (the sum of its terms' IDF). Raw BM25 is not comparable between
-  // queries or between corpora — it grows with query length and with log(N),
-  // so the same phrase scores ~0.4 against a 1-record index and ~10 against
-  // the 4,831-skill snapshot, and higher again against the 43,714-skill index
-  // `sync` downloads. This ratio is stable across all three, which is what
-  // makes it worth printing: `find` shows it per row so the model comparing
-  // rows reads the same number whichever index the user happens to have. It
-  // is not bounded by 1: BM25's term-frequency factor saturates at K1+1, so a
-  // document that repeats every query term lands above it.
+  // BM25 score divided by the best score this query could reach (the sum of
+  // its terms' IDF). Raw BM25 grows with query length and corpus size; this
+  // ratio reads the same against the packaged snapshot and the full index,
+  // which is what makes it worth printing per row. It can exceed 1: the
+  // term-frequency factor saturates above the IDF sum.
   //
-  // It is a signal, never a gate ON THE LIST. A fixed floor was tried and
-  // removed: the junk and capability distributions measured against the
-  // shipped snapshot OVERLAP (junk max 1.298, capability min 0.850), so no
-  // threshold separates them, and any floor high enough to reject junk
-  // silenced almost every real query. Deciding whether a row FITS the task is
-  // still the model's job — from the description, which is the one place a
-  // homonym shows itself; reporting how much of the query the row matched is
-  // this number's.
-  //
-  // It does gate one thing, and only one: which LINE find prints under the
-  // rows, and so whether the model asks at all. That is MIN_ASK_RELEVANCE
-  // below — read it next; without it this paragraph reads as "the number
-  // decides nothing", which has not been true since the middle band went.
+  // It says how much of the query a row matched, not whether the row fits
+  // the task — a rare word ranks its wrong sense just as high. Fit is judged
+  // from the description; this number only gates what `find` prints under
+  // the rows (MIN_ASK_RELEVANCE).
   relevance: number;
 }
 
-// The ONE threshold that decides what `find` PRINTS under the rows, and so
-// what the model does next. It is not a gate on the search: every hit is
-// still listed with its own number, because the distributions above say no
-// floor can separate junk from capability phrases. What it gates is the
-// ACTION — at or above it, a question ready to put to the user; below it,
-// silence. Left to prose, the rule was ignored: the question printed at
-// relevance 0.08 exactly as it did at 1.58, and a mechanism that costs
-// nothing at the moment the rule says stop is not a rule, it is a suggestion
-// beside a button.
+// The one threshold that decides what `find` prints under the rows: at or
+// above it a ready-made question, below it silence. Two zones, no middle
+// band in which the model decides whether to ask — a slot that permits
+// skipping is used to skip.
 //
-// TWO zones, not three. The middle band ("0.5-1.0: decide whether the row
-// fits, then ask") was the last slot in which the model got to rule on
-// whether to ask at all, and on 2026-09-04 the user's own five `find` calls
-// ALL landed in it and produced no question — four of the five deserved one.
-// Three review rounds ended the same way: a slot that permits skipping is
-// used to skip. So the middle band is gone, and the only silence at or above
-// the threshold is a CHECK the model can make and the score cannot — the row
-// says nothing readable, or plainly names a different thing with the same
-// word.
-//
-// MEASURED 2026-09-06 against index-snapshot.json (4,835 skills), on the 52
-// queries of test/fixtures/everyday-queries.json (47) plus the five real
-// 2026-09-04 queries (test/fixtures/calibration-queries.json). "Deserving" =
-// a top row that answers the query (13 rows: 4 real + the 9 everyday rows
-// flagged `homonym: false`); "undeserving" = a top row that does not (39
-// rows: 1 real + 38 flagged `homonym: true`). Share reaching >= T:
-//
-//     T     deserving >= T     undeserving >= T   deserving REAL >= T
-//   0.45      11/13   85%        33/39   85%           4/4
-//   0.50      10/13   77%        30/39   77%           4/4
-//   0.55      10/13   77%        28/39   72%           4/4   <- chosen
-//   0.60       8/13   62%        23/39   59%           3/4
-//   0.65       8/13   62%        18/39   46%           3/4
-//   0.70       7/13   54%        13/39   33%           2/4
-//
-// 0.55 is the highest candidate that still admits all four deserving real
-// queries — their minimum is 0.56 (`linkedin content writing proptech`), and
-// 0.60 loses it. Going lower buys nothing: at 0.45 the two curves are equal
-// (85% / 85%), i.e. the threshold has stopped discriminating at all, and it
-// admits five more undeserving rows (33 against 28) for one more deserving
-// one. It also leaves the one real query that deserved silence
-// (`real estate feed api`, 0.43) below the line with room to spare.
-//
-// Read the deserving column against what is reachable. Two of the 13 —
-// `meditation mindfulness` and `yoga routine` — return NO hits at all
-// against this snapshot (relevance 0, no row to print), so they are in the
-// denominator at every T and above none of them; the registry simply has
-// nothing for them. The 77% at 0.55 is therefore 10 of the 11 deserving rows
-// any threshold could reach, and no candidate in the table can do better
-// than 11/13 = 85%.
-//
-// 72% of undeserving rows clear 0.55 too. That is expected and is NOT T's
-// job: BM25 ranks a homonym HIGHER when the shared word is rare, so no
-// threshold can separate "insomnia the sleep problem" from "Insomnia the
-// REST client". Those are caught above the line, by the description check
-// find.ts prints — one yes/no about text on the row, with both answers named.
-//
-// Exported so find.ts's zones and the number written into the injected
-// protocol cannot drift apart — test/protocol.test.ts asserts the block
-// quotes this very value.
+// Measured against the packaged snapshot on the everyday and calibration
+// query fixtures (see DESIGN.md): 0.55 is the highest value that admits every
+// real query that deserved a question (their minimum was 0.56), and going
+// lower stops discriminating at all. Most rows above the line are homonyms
+// no threshold can separate; the description check in find.ts catches
+// those. Exported so the protocol text quotes this exact value.
 export const MIN_ASK_RELEVANCE = 0.55;
 
-// Single characters carry no signal and blow up the term dictionary; version
-// fragments ("1", "2") would otherwise dominate rare-term scoring.
+// Single characters carry no signal and version fragments would dominate
+// rare-term scoring.
 export function tokenize(s: string): string[] {
   return s
     .toLowerCase()
@@ -105,13 +42,9 @@ export function tokenize(s: string): string[] {
     .filter((t) => t.length > 1);
 }
 
-// Shared by `find` (the query it searches with) and `install` (`--matched`,
-// so a confirmed install's lock entry records the phrase in exactly the form
-// `find`'s reinstall check compares against — see find.ts's alreadyPresent).
-// One function, not two copies: an unsanitised `--matched` would either never
-// match a later `find`'s normalised query, or, if over-broad, permanently
-// short-circuit unrelated future finds onto this one skill. Lives here rather
-// than in either command module so neither has to import the other.
+// Shared by `find` (its query) and `install`/`decline` (`--matched`), so the
+// phrase recorded in the lock is exactly the form a later `find` compares
+// against.
 export function normaliseQuery(s: string): string {
   return s
     .toLowerCase()
@@ -131,12 +64,10 @@ export function snapshotPath(): string {
   return path.join(packageRoot(), "index-snapshot.json");
 }
 
-// A file whose schemaVersion is not the one this build understands is not an
-// index as far as the runtime is concerned: a future builder may repurpose a
-// field this code reads (`scan`, `installs`, `estimated` all drive policy), so
-// guessing at it is how a stale binary auto-installs on a verdict it
-// misread. Rejecting it here also stops refreshIndex from replacing a good
-// local index with one it cannot interpret.
+// A schemaVersion this build does not understand is rejected outright: the
+// fields policy reads (`scan`, `installs`, `estimated`) could mean something
+// else, and refreshIndex must never replace a readable index with one it
+// cannot interpret.
 function readOne(file: string): IndexFile | null {
   try {
     const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as IndexFile;
@@ -152,16 +83,10 @@ export function isIndexFile(parsed: unknown): parsed is IndexFile {
   return !!f && Array.isArray(f.skills) && f.schemaVersion === INDEX_SCHEMA_VERSION;
 }
 
-// The index already carries a scan verdict per skill, so no runtime path has
-// to download a tarball to find out (spec 7 Defect 2). `unknown` in the index
-// means the scanner never got a verdict, which is `unavailable` to policy —
-// never "clean".
-//
-// loadIndex/readOne validates the file, never the shape of each record, so a
-// hand-edited or corrupted index.json can omit these arrays entirely (or
-// carry an explicit `null`) — default them, or a dirty scan
-// (policy.ts's `scan.findings.slice`) or an advisory check
-// (`scan.advisories.length`) throws before the caller prints anything.
+// The index carries a scan verdict per skill, so the runtime never downloads
+// a tarball to learn one. `unknown` (no verdict) is `unavailable` to policy,
+// never clean. The arrays are defaulted: readOne validates the file, not each
+// record, and a hand-edited index can omit them.
 export function scanResultFromIndex(r: IndexRecord): ScanResult {
   return {
     status: r.scan === "unknown" ? "unavailable" : r.scan,
@@ -170,11 +95,9 @@ export function scanResultFromIndex(r: IndexRecord): ScanResult {
   };
 }
 
-// METASKILL_INDEX exists for test isolation: a sandboxed HOME can redirect
-// indexPath() (via METASKILL_HOME), but snapshotPath() always resolves under
-// the running package's own root, which a test cannot relocate. Set, it is
-// the ONLY file consulted — missing or unreadable means null, never a
-// silent fall-through to whatever snapshot happens to sit in packageRoot().
+// METASKILL_INDEX is for test isolation: a sandboxed HOME can move
+// indexPath(), but the packaged snapshot always resolves under the running
+// package. When set it is the only file consulted.
 export function loadIndex(file?: string): IndexFile | null {
   if (file) return readOne(file);
   const override = process.env.METASKILL_INDEX;
@@ -204,22 +127,16 @@ export function search(index: IndexFile, query: string, limit = 5): Hit[] {
     const n = df.get(t) ?? 0;
     return Math.log(1 + (N - n + 0.5) / (n + 0.5));
   };
-  // The best score any document could reach for this query: every term
-  // matched, before the term-frequency factor. The denominator of `relevance`.
+  // The denominator of `relevance`.
   const maxScore = qTerms.reduce((a, t) => a + idfOf(t), 0);
-  // Dedup by pkg, keeping the highest-scoring row: index.json can carry the
-  // same package more than once (repeat scans, registry sweep overlap), and
-  // a caller-facing top-N must not repeat a package to fill it.
+  // One hit per pkg (the highest-scoring row): the index can carry a package
+  // more than once.
   const bestByPkg = new Map<string, Hit>();
   for (let i = 0; i < N; i++) {
     const doc = docs[i]!;
     if (!doc.length) continue;
-    // A record with no pkg can't be installed, displayed, logged, or asked
-    // about — it has no business being a hit at all. Filtering here, before
-    // it ever reaches a Hit, means one corrupted record can no longer take
-    // out every well-formed candidate ranked beside it downstream (a thrown
-    // recordToCandidate mid-`.map()` used to discard the whole batch).
-    // Falsy, not `?? `/nullish: an empty-string pkg is exactly as useless.
+    // A record with no pkg cannot be installed, printed or asked about, and
+    // one such record must not take the whole batch down later.
     const record = index.skills[i]!;
     if (!record.pkg) continue;
     const tf = new Map<string, number>();
@@ -239,17 +156,13 @@ export function search(index: IndexFile, query: string, limit = 5): Hit[] {
   }
 
   const hits = [...bestByPkg.values()];
-  // Tie-break on pkg so equal scores never reorder between runs. `?? ""`
-  // guards a record whose `pkg` a corrupted or hand-edited index.json
-  // dropped — well-formed records (the overwhelming case) compare exactly
-  // as before, since neither side is ever nullish for them.
+  // Tie-break on pkg so equal scores never reorder between runs.
   hits.sort((a, b) => b.score - a.score || (a.record.pkg ?? "").localeCompare(b.record.pkg ?? ""));
   return hits.slice(0, limit);
 }
 
-// Exact pkg lookup for the update paths, which know the package and need its
-// verdict — not a ranked search. The index can carry duplicate pkg rows, so a
-// dirty row wins over a clean one: the safe reading of ambiguous data.
+// Exact pkg lookup for the install and update paths. Among duplicate rows a
+// dirty one wins: the safe reading of ambiguous data.
 export function findByPkg(index: IndexFile, pkg: string): IndexRecord | null {
   let hit: IndexRecord | null = null;
   for (const r of index.skills) {

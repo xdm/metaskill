@@ -32,7 +32,7 @@ function addSkill(baseDir: string, name: string, frontmatter?: string) {
   fs.writeFileSync(path.join(dir, "SKILL.md"), frontmatter ?? `---\nname: ${name}\ndescription: d\n---\nbody\n`);
 }
 
-describe("inventory (spec 4.2.3)", () => {
+describe("inventory", () => {
   it("lists skills from project, ~/.claude and ~/.agents, deduped, symlinks included", () => {
     addSkill(path.join(home, ".agents", "skills"), "xlsx");
     // symlink into ~/.claude/skills the way `skills add -g` does

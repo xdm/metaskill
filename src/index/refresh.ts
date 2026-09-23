@@ -17,16 +17,9 @@ export interface RefreshOpts {
 export async function refreshIndex(
   opts: RefreshOpts = {},
 ): Promise<{ updated: boolean; skillCount?: number; reason?: string }> {
-  // `sync` calls this with no injected fetch, and integration tests exercise
-  // `sync` by spawning the real built CLI as a subprocess — there's no
-  // in-process seam to hand it a stub fetchImpl across that boundary. The
-  // test harness sets this instead, so `npm test` never reaches the network.
-  // Never set by a real user session; only the test harness's own spawned
-  // env carries it.
-  // Set-and-non-empty, not bare truthiness: `METASKILL_SKIP_INDEX_REFRESH=0`
-  // and `=false` are how a user turns a switch OFF, and under truthiness both
-  // turned the skip ON — silently costing them every index refresh. Same
-  // idiom as METASKILL_SKILLS_CMD in paths.ts.
+  // Set by the test harness only: integration tests spawn the real CLI, so
+  // there is no in-process seam for a stub fetch. Set-and-non-empty, not
+  // truthiness — `=0` and `=false` must turn the switch off.
   const skip = process.env.METASKILL_SKIP_INDEX_REFRESH;
   if (skip && skip.trim().length > 0 && skip !== "0" && skip.toLowerCase() !== "false") {
     return { updated: false, reason: "skipped (METASKILL_SKIP_INDEX_REFRESH)" };
@@ -35,10 +28,8 @@ export async function refreshIndex(
   const dest = path.join(dir, "index.json");
   const tmp = `${dest}.${process.pid}.tmp`;
   const ctrl = new AbortController();
-  // The real asset is ~23.8MB (23,775,671 bytes measured). A 20s budget was
-  // measured aborting mid-download on a fast connection (three real runs:
-  // 11.98s, 19.91s, and one that exceeded 20s and got cut off) — do not
-  // "tidy" this back down without re-measuring against the current asset size.
+  // The asset is ~24MB; a 20s budget was measured aborting mid-download on a
+  // fast connection. Re-measure before lowering.
   const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 45_000);
   try {
     const res = await (opts.fetchImpl ?? fetch)(ASSET, { signal: ctrl.signal });

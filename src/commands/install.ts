@@ -9,12 +9,9 @@ import type { Candidate, ScanResult } from "../types.js";
 
 export interface InstallFlags {
   force?: boolean;
-  // The phrase that found this package — normally copied verbatim from the
-  // `--matched "<q>"` flag on the command `find` itself printed, already
-  // normalised there. Normalised again here through the SAME function (never
-  // a second copy — see index/read.ts), so a hand-typed or edited value lands
-  // in the lock exactly as `find`'s reinstall check needs it to short-circuit
-  // a repeat of the phrase that found this skill.
+  // The phrase that found this package, from the `--matched "<q>"` flag on
+  // the command `find` printed. Normalised through the same function as
+  // `find`'s query, so the lock holds exactly what a later `find` compares.
   matched?: string;
 }
 
@@ -36,14 +33,9 @@ export async function installCommand(pkg: string | undefined, flags: InstallFlag
     url: "",
   };
 
-  // The local index already carries a scan verdict for every package it knows
-  // (spec 7 Defect 2: the runtime reads a field, it does not re-download a
-  // tarball), so it is consulted FIRST — for every publisher, allowlisted or
-  // not. This path used to run no scan at all for an allowlisted publisher
-  // and hand decide() a bare "skipped", which is how
-  // `install anthropics/skills@xlsx` installed, silently, a package the very
-  // index shipped in this package marks dirty. Only a package the index has
-  // never heard of falls back to the live tarball scan.
+  // The local index carries a scan verdict for every package it knows, so it
+  // is consulted first for every publisher, allowlisted or not; only a
+  // package the index has never heard of gets the live tarball scan.
   let scan: ScanResult = { status: "skipped", findings: [], advisories: [] };
   const index = loadIndex();
   const indexed = index ? findByPkg(index, pkg) : null;
@@ -65,19 +57,13 @@ export async function installCommand(pkg: string | undefined, flags: InstallFlag
   }
   if (verdict.decision === "ask" && !flags.force) {
     process.stderr.write(
-      // `Needs confirmation` already names the action, so the reason's own
-      // `needs your yes — ` opener (policy.ts) would say it twice here. It is
-      // stripped at this one wrap site only; everywhere the reason stands on
-      // its own — every row `find` prints — it keeps the prefix.
+      // `Needs confirmation` already names the action the reason opens with.
       `Needs confirmation (${verdict.reason.replace(/^needs your yes — /, "")}). Re-run with --force after the user has approved it.\n`,
     );
     return 1;
   }
 
-  // Empty, not merely undefined, collapses to "no phrase": a `--matched`
-  // that normalises away to nothing (e.g. all punctuation) must not record an
-  // empty-string domain, which `list` would render as a blank cell rather
-  // than "-".
+  // A `--matched` that normalises to nothing records no phrase, not "".
   const matched = normaliseQuery(flags.matched ?? "");
   const domain = matched.length ? matched : undefined;
 
@@ -90,14 +76,7 @@ export async function installCommand(pkg: string | undefined, flags: InstallFlag
   // there is no other one, by design (declines.ts).
   removeDecline(pkg);
 
-  // One row per successful install, logged here rather than inside
-  // installSkill: this is the only caller a human (via --force) or the
-  // model's confirmed "yes" actually drives, so it is the only one that
-  // should count. A refused install (deny, or ask without --force) returns
-  // above and never reaches this line — nothing is logged for it.
-  // followThrough (log.ts) excludes session "install" from both its prompt
-  // and find counts: this row is bookkeeping, not a lookup or a routed
-  // prompt.
+  // One log row per confirmed install; a refused one returned above.
   appendLog(
     {
       ts: new Date().toISOString(),

@@ -50,7 +50,7 @@ function cand(pkg: string): Candidate {
   return { pkg, publisher: pkg.split("/")[0]!, skillName: pkg.slice(pkg.lastIndexOf("@") + 1), installs: 1, url: "" };
 }
 
-describe("scan (spec §5: before unpacking into ~/.claude/skills)", () => {
+describe("scan (before anything is unpacked into ~/.claude/skills)", () => {
   const policy = defaultPolicy();
 
   it("clean skill directory -> clean", async () => {

@@ -34,10 +34,9 @@ function installedVersion(skill: string): string | undefined {
   return undefined;
 }
 
-// Spec §7 Defect 1 applies to updating, not only to installing: the allowlist
-// lowers the install threshold, it never waives the scan. Only a positive
-// `dirty` verdict blocks — an unknown package or a missing index leaves the
-// existing behaviour intact, matching decide()'s own treatment of `unknown`.
+// The allowlist lowers the install threshold, it never waives the scan —
+// on update as on install. Only a positive `dirty` verdict blocks; an
+// unknown package or a missing index changes nothing.
 export function blockedByScan(index: IndexFile | null, pkg: string): string | null {
   if (!index) return null;
   const r = findByPkg(index, pkg);
@@ -49,7 +48,7 @@ export function blockedByScan(index: IndexFile | null, pkg: string): string | nu
   return Array.isArray(r.scanFindings) ? r.scanFindings[0] ?? "dirty" : "dirty";
 }
 
-// Manual `metaskill update [names...]` (spec 4.4). Same trust rules as sync:
+// Manual `metaskill update [names...]`. Same trust rules as sync:
 // allowlisted publishers update freely; others need --force (that's the `ask`
 // tier); deny_publishers are skipped no matter what; and — ahead of both,
 // unbypassable by --force exactly like deny_publishers — a package the local

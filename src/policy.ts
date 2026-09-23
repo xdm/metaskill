@@ -26,9 +26,8 @@ function expandHome(p: string): string {
   return p.startsWith("~/") ? os.homedir() + p.slice(1) : p;
 }
 
-// Reads ~/.metaskill/metaskill.yaml (snake_case, spec 4.5) over built-in
-// defaults. Any read/parse failure -> defaults; the hook must never die on
-// a broken config.
+// Reads ~/.metaskill/metaskill.yaml (snake_case) over built-in defaults. Any
+// read/parse failure -> defaults; the hook must never die on a broken config.
 export function loadPolicy(): Policy {
   const p = defaultPolicy();
   let raw: string;
@@ -61,38 +60,28 @@ export function loadPolicy(): Policy {
   return p;
 }
 
-// The public verdict: spec 4.5's table (verdictFor, below) behind the one
+// The public verdict: the decision table (verdictFor, below) behind the one
 // gate that decides whether an `auto` is allowed to stand.
 export function decide(c: Candidate, scan: ScanResult, p: Policy): PolicyDecision {
   const verdict = verdictFor(c, scan, p);
-  // The single gate over every `auto` the table can produce. Until the
-  // discovery path is proven in real use, nothing installs without the user's
-  // explicit yes. The verdict above is still computed in full, so flipping
-  // `trust.auto_install` on restores the designed behaviour with no other
-  // change — and a branch added to verdictFor() later cannot slip past this,
-  // because there is exactly one way out of it.
-  //
-  // `deny` is untouched on purpose: this knob lowers what may happen
-  // unattended, it never raises anything.
+  // The single gate over every `auto` the table can produce: with
+  // `trust.auto_install` off (the default) nothing installs without the
+  // user's yes. The verdict is still computed in full, and a branch added to
+  // verdictFor() later cannot slip past this. `deny` is untouched: the knob
+  // lowers what may happen unattended, never raises it.
   const gated: PolicyDecision =
     verdict.decision === "auto" && !p.trust.autoInstall
       ? { decision: "ask", reason: `auto-install is off; ${verdict.reason}` }
       : verdict;
 
-  // Every `ask` leaves here wearing the same four words, for the same reason
-  // the gate above has one exit. The table states facts about the package
-  // ("publisher kostja94 not allowlisted"), and rendered in a row as
-  // `[ask: publisher kostja94 not allowlisted]` a fact about the package
-  // reads as a verdict AGAINST it — scored, found wanting, move on. That is
-  // how the first real v2 lookup ended: five ask rows, a top row that plainly
-  // fitted, and no question put to anyone. `ask` is not a finding, it is an
-  // instruction to whoever is reading — so the reason opens with the action
-  // and lets the fact it rests on follow. `deny` keeps the plain fact: there
-  // is no action to name, and no flag can act on one.
+  // An `ask` reason opens with the action ("needs your yes — ...") because
+  // a bare fact ("publisher X not allowlisted") in a row reads as a verdict
+  // against the package, and rows read that way were never asked about.
+  // `deny` keeps the plain fact: there is no action to name.
   return gated.decision === "ask" ? { decision: "ask", reason: `needs your yes — ${gated.reason}` } : gated;
 }
 
-// Spec 4.5 decision table, in order: deny_skills / deny_publishers -> deny;
+// The decision table, in order: deny_skills / deny_publishers -> deny;
 // dirty scan -> deny; estimated installs -> ask; scan advisories -> ask;
 // allowlisted publisher WITH a clean scan -> auto; installs >= min_installs
 // with a clean scan -> auto; otherwise ask. The scan and the
@@ -125,21 +114,16 @@ function verdictFor(c: Candidate, scan: ScanResult, p: Policy): PolicyDecision {
   if (scan.advisories.length) {
     return { decision: "ask", reason: `scan advisory: ${scan.advisories.slice(0, 3).join("; ")}` };
   }
-  // Allowlisted, but the scan must still be CLEAN. `dirty` was already denied
-  // above; what this catches is the absence of a verdict — `unknown` in the
-  // index (300 records, 6.2% of the shipped snapshot), `unavailable` from a
-  // scan that could not complete, `skipped` from a caller that ran none.
-  // Spec 4.1 maps unknown to ask, never auto, and an unscanned package from a
-  // trusted publisher is exactly the compromised-commit case the allowlist is
-  // least able to see. The allowlist still does its job below: it waives the
-  // install-count threshold, which is all it was ever meant to waive.
+  // Allowlisted, but the scan must still be clean. `dirty` was denied above;
+  // this catches the absence of a verdict (`unknown`, `unavailable`,
+  // `skipped`), which maps to ask, never auto: an unscanned package from a
+  // trusted publisher is exactly the compromised-commit case the allowlist
+  // cannot see. The allowlist waives the install-count threshold below, and
+  // only that.
   if (p.trust.allowlist.includes(c.publisher)) {
-    // `require_clean_scan: false` is the user saying, in their own config,
-    // that they do not want a clean verdict demanded of anyone. It already
-    // means exactly that for the threshold branch below; honouring it here
-    // too keeps allowlisted publishers from ending up held to a STRICTER
-    // standard than strangers. It is off by default, and the allowlist
-    // itself no longer waives anything.
+    // `require_clean_scan: false` already waives the verdict for the
+    // threshold branch below; honouring it here keeps allowlisted publishers
+    // from being held to a stricter standard than strangers.
     if (scan.status === "clean" || !p.trust.autoThreshold.requireCleanScan) {
       return {
         decision: "auto",

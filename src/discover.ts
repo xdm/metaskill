@@ -77,8 +77,7 @@ export interface DiscoverOpts {
   onFailure?: (err: unknown) => void;
 }
 
-// Queries are short capability terms (taxonomy queries, or a phrase the
-// in-session model derived) — never the raw prompt (spec 4.2.4). Results are
+// Queries are short capability phrases, never the raw prompt. Results are
 // cached 24h per key; a failed lookup falls back to a stale cache entry
 // rather than erroring the hook.
 async function discoverRaw(cacheKey: string, query: string, opts: DiscoverOpts): Promise<Candidate[]> {
