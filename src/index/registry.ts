@@ -54,6 +54,7 @@ export interface SweepResult {
 
 interface RawSkill {
   name?: unknown;
+  skillId?: unknown;
   source?: unknown;
   installs?: unknown;
 }
@@ -66,6 +67,7 @@ export function parseSearchResponse(json: unknown): RegistrySkill[] {
     if (typeof s?.name !== "string" || typeof s?.source !== "string") continue;
     out.push({
       name: s.name,
+      id: typeof s.skillId === "string" && s.skillId.length ? s.skillId : s.name,
       source: s.source,
       installs: typeof s.installs === "number" ? s.installs : 0,
     });

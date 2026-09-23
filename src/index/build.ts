@@ -31,7 +31,7 @@ function registryOnlyRecords(source: string, registry: RegistrySkill[], meta: Re
   return registry.map((r) => ({
     name: r.name,
     source,
-    pkg: `${source}@${r.name}`,
+    pkg: `${source}@${r.id}`,
     description: "",
     installs: r.installs,
     installsPrior: null,

@@ -1,3 +1,4 @@
+import { installNameOf } from "./naming.js";
 import type { RepoSkill } from "./repo.js";
 import type { IndexRecord, IndexScanStatus, RegistrySkill, RepoMeta } from "./types.js";
 
@@ -23,17 +24,26 @@ export function joinRepo(
   registry: RegistrySkill[],
   meta: RepoMeta = {},
 ): IndexRecord[] {
+  // The registry reports a lowercased name and a slugged id; the frontmatter
+  // name is neither. The install name (naming.ts) is the slug the CLI
+  // matches, so it is the join key — the raw name second, for a response
+  // that carried no slug.
+  const installsById = new Map(registry.map((r) => [r.id, r.installs]));
   const installsByName = new Map(registry.map((r) => [r.name, r.installs]));
+  const installsOf = (s: RepoSkill): number | undefined =>
+    installsById.get(installNameOf(s.name)) ?? installsByName.get(s.name);
   // Siblings with real numbers are the only honest basis for an estimate:
   // same author, same repo, same review standard.
-  const prior = medianInstalls(scanned.map((s) => installsByName.get(s.name)).filter((v): v is number => typeof v === "number"));
+  const prior = medianInstalls(scanned.map(installsOf).filter((v): v is number => typeof v === "number"));
 
   return scanned.map((s) => {
-    const installs = installsByName.get(s.name) ?? null;
+    const installs = installsOf(s) ?? null;
     return {
       name: s.name,
       source,
-      pkg: `${source}@${s.name}`,
+      // The CLI's install name, not the frontmatter name: this is the string
+      // `skills add` matches and the directory it creates (naming.ts).
+      pkg: `${source}@${installNameOf(s.name)}`,
       description: s.description,
       license: s.license,
       version: s.version,

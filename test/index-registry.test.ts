@@ -27,9 +27,20 @@ const REAL_RESPONSE = {
 describe("parseSearchResponse", () => {
   it("maps the real API shape to RegistrySkill", () => {
     expect(parseSearchResponse(REAL_RESPONSE)).toEqual([
-      { name: "vercel-react-best-practices", source: "vercel-labs/agent-skills", installs: 670778 },
-      { name: "vercel-react-native-skills", source: "vercel-labs/agent-skills", installs: 197078 },
+      { name: "vercel-react-best-practices", id: "vercel-react-best-practices", source: "vercel-labs/agent-skills", installs: 670778 },
+      { name: "vercel-react-native-skills", id: "vercel-react-native-skills", source: "vercel-labs/agent-skills", installs: 197078 },
     ]);
+  });
+
+  it("carries the registry's slug as id, falling back to the name when absent", () => {
+    const [withSlug, without] = parseSearchResponse({
+      skills: [
+        { skillId: "linkedin-automation", name: "linkedin automation", source: "o/r", installs: 3 },
+        { name: "plain", source: "o/r", installs: 1 },
+      ],
+    });
+    expect(withSlug).toMatchObject({ id: "linkedin-automation", name: "linkedin automation" });
+    expect(without).toMatchObject({ id: "plain", name: "plain" });
   });
 
   it("returns [] for the error body and for junk", () => {
@@ -74,7 +85,7 @@ describe("sweepRegistry", () => {
     }) as unknown as typeof fetch;
 
     const out = await sweepRegistry({ ...fast, fetchImpl, grams: ["aa", "bb"] });
-    expect(out.skills).toEqual([{ name: "s", source: "a/b", installs: 99 }]);
+    expect(out.skills).toEqual([{ name: "s", id: "s", source: "a/b", installs: 99 }]);
   });
 
   it("survives a failing gram without losing the others, and names it", async () => {

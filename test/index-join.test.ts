@@ -15,7 +15,7 @@ function scanned(name: string, over: Partial<ScannedSkill> = {}): ScannedSkill {
   };
 }
 
-const reg = (name: string, installs: number): RegistrySkill => ({ name, source: "o/r", installs });
+const reg = (name: string, installs: number, id = name): RegistrySkill => ({ name, id, source: "o/r", installs });
 
 describe("medianInstalls", () => {
   it("returns the median for odd and even counts", () => {
@@ -37,6 +37,23 @@ describe("joinRepo", () => {
       installsPrior: null,
       estimated: false,
     });
+  });
+
+  it("names the package by the CLI's install name, and keeps the frontmatter name for display", () => {
+    // `skills add o/r@<selector>` matches the selector against the CLI's
+    // sanitised install name, and that is also the directory it installs
+    // into. 345 live records carried a frontmatter name with spaces or
+    // capitals, and every command printed for them split in the shell.
+    const [r] = joinRepo("o/r", [scanned("LinkedIn Automation")], []);
+    expect(r).toMatchObject({ pkg: "o/r@linkedin-automation", name: "LinkedIn Automation" });
+  });
+
+  it("joins registry installs by the registry's slug, which the install name matches", () => {
+    // The registry lowercases the name it reports ("linkedin automation") and
+    // slugs the id ("linkedin-automation"); a join on the raw frontmatter
+    // name missed every such skill and marked it estimated.
+    const [r] = joinRepo("o/r", [scanned("LinkedIn Automation")], [reg("linkedin automation", 512, "linkedin-automation")]);
+    expect(r).toMatchObject({ installs: 512, estimated: false });
   });
 
   it("gives unknown skills the median of known siblings and marks them estimated", () => {

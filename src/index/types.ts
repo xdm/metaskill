@@ -2,7 +2,10 @@
 // index it produces. This file is the contract between them; keep it free of I/O.
 
 export interface RegistrySkill {
-  name: string; // frontmatter name, which is what the registry indexes by
+  name: string; // the name as the registry reports it (lowercased)
+  // The registry's slug (`skillId`), which is what the CLI's install name
+  // (naming.ts) matches; the name when the response carries none.
+  id: string;
   source: string; // "owner/repo"
   installs: number;
 }
