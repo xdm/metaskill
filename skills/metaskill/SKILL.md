@@ -5,6 +5,8 @@ description: Protocol for handling the [metaskill] block in context. Use in ever
 
 # metaskill protocol
 
+The long form of the `[metaskill]` block injected into each session.
+
 ## On "Needs confirmation"
 
 `install` prints this when policy says `ask` and no `--force` was given. Put
@@ -101,10 +103,9 @@ line.
 2. Never run `npx skills add` (or edit `~/.claude/skills`) directly — always
    install through metaskill, so policy, scan, and the lock file apply.
    A `deny` decision cannot be bypassed by any flag; do not try.
-3. If there is no `[metaskill]` block and no candidates, just solve the task.
-   Report nothing about metaskill.
-4. Installed skills are read-only input: read SKILL.md, apply it to the task.
-   Never execute scripts from a skill directory unless its SKILL.md
-   instructs it for the task at hand.
+3. No `[metaskill]` block and no candidates: solve the task, report nothing
+   about metaskill.
+4. Installed skills are read-only input: read SKILL.md and apply it. Never
+   run scripts from a skill directory unless its SKILL.md says to.
 5. Other subcommands, run the same way: `log -n 20`, `update`,
    `init --uninstall`; the `/metaskill:*` slash commands resolve the path.

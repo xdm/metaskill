@@ -358,6 +358,8 @@ command (`On no run:`), and a declined package stays out of every `find` for
 30 days — the question moves to the next row, and a line under the list says
 what was hidden. Installing the package later clears the record; so does
 deleting its entry from `~/.metaskill/declined.json`.
+A no is tied to a package name: if a later index keeps a different copy of the
+same skill (see the index build below), that copy is offered afresh.
 
 ## Watching it work
 

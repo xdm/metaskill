@@ -188,22 +188,29 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     // twelve mornings in a row, and a no that changes nothing on screen is
     // a no the user stops giving. The search asks for that many extra rows,
     // so a hidden package never shortens the list the model reads.
+    //
+    // What was hidden is kept as log items, not names: every logFind call
+    // below appends them, marked `declined`, after the rows that printed.
+    // Without that, a lookup that found five declined packages logs
+    // `discovered: []` — the "found nothing" reading task 14 removed for the
+    // no-match case, back again for the one case a reader most wants to
+    // check ("why did it stop asking?").
     const declined = activeDeclines();
-    const isDeclined = (pkg: string): boolean => pkg in declined;
-    const hidden: string[] = [];
-    const notDeclined = <T>(xs: T[], pkgOf: (x: T) => string): T[] =>
+    const hidden: DiscoveredLogItem[] = [];
+    const notDeclined = <T>(xs: T[], toItem: (x: T) => DiscoveredLogItem): T[] =>
       xs.filter((x) => {
-        const pkg = pkgOf(x);
-        if (!isDeclined(pkg)) return true;
-        if (!hidden.includes(pkg)) hidden.push(pkg);
+        const item = toItem(x);
+        if (!(item.pkg in declined)) return true;
+        if (!hidden.some((h) => h.pkg === item.pkg)) hidden.push(item);
         return false;
       });
     // Named under the list, one line per package, so the screen accounts for
-    // a row the log's `discovered` will not carry: a top-ranked package that
-    // simply vanished from the rows reads as a ranking bug, and a reader
-    // comparing today's output with yesterday's has to be told why.
+    // rows that are not there: a top-ranked package that simply vanished
+    // reads as a ranking bug, and a reader comparing today's output with
+    // yesterday's has to be told why. Rendered from `hidden`, so it is empty
+    // until a filter above has run — every print site below is after one.
     const declinedBlock = (): string =>
-      hidden.map((pkg) => `Declined earlier, not offered: ${pkg} (until ${declined[pkg]!.until.slice(0, 10)})\n`).join("");
+      hidden.map((h) => `Declined earlier, not offered: ${h.pkg} (until ${declined[h.pkg]!.until.slice(0, 10)})\n`).join("");
     // The command for a no, printed under the command for a yes and only
     // beside a question: the yes has had its command since v2, and a no with
     // no command to run was a no nobody could record.
@@ -211,7 +218,15 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
 
     const index = loadIndex(opts.index);
     const declinedCount = Object.keys(declined).length;
-    let hits = index ? notDeclined(search(index, q, 5 + declinedCount), (h) => h.record.pkg).slice(0, 5) : [];
+    let hits = index
+      ? notDeclined(search(index, q, 5 + declinedCount), (h) => ({
+          pkg: h.record.pkg,
+          installs: h.record.installs ?? h.record.installsPrior ?? 0,
+          publisher: publisherOf(h.record.pkg),
+          decision: "declined",
+          scan: scanResultFromIndex(h.record).status,
+        })).slice(0, 5)
+      : [];
 
     // Every local match is one the user has already declined. The live
     // fallback below would only go looking for the same packages; and
@@ -220,7 +235,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
     // named under it.
     if (!hits.length && hidden.length) {
       process.stdout.write(`[metaskill] No skills found for "${q}". Solve the task without one.\n${declinedBlock()}${pluginLine}`);
-      logFind([], []);
+      logFind([], hidden);
       return 0;
     }
 
@@ -257,7 +272,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
             liveFailed = true;
           },
         }),
-        (c) => c.pkg,
+        (c) => ({ pkg: c.pkg, installs: c.installs, publisher: c.publisher, decision: "declined", scan: "unavailable" }),
       );
       if (!cands.length) {
         // A lookup that never answered is not the same fact as a registry that
@@ -271,7 +286,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
           return 0;
         }
         process.stdout.write(`[metaskill] No skills found for "${q}". Solve the task without one.\n${declinedBlock()}${pluginLine}`);
-        logFind([], []);
+        logFind([], hidden);
         return 0;
       }
       const top = [...cands].sort((a, b) => b.installs - a.installs)[0]!;
@@ -298,7 +313,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       // unscanned candidate to `ask` regardless, so hard-coding it here
       // matches what policy would compute without paying for a scan nobody
       // asked for.
-      logFind([], [{ pkg: top.pkg, installs: top.installs, publisher: top.publisher, decision: "ask", scan: "unavailable" }]);
+      logFind([], [{ pkg: top.pkg, installs: top.installs, publisher: top.publisher, decision: "ask", scan: "unavailable" }, ...hidden]);
       return 0;
     }
 
@@ -350,7 +365,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
       process.stdout.write(
         `[metaskill] No skills found for "${q}". Solve the task without one.\n${deniedBlock}${declinedBlock()}${pluginLine}`,
       );
-      logFind([], [...askable, ...denied].map(toDiscovered)); // askable is empty here: stdout order is the refused block
+      logFind([], [...[...askable, ...denied].map(toDiscovered), ...hidden]); // askable is empty here: stdout order is the refused block
       return 0;
     }
     // The row the line under the rows is about, before the two things that
@@ -552,7 +567,7 @@ export async function findCommand(query: string, opts: { index?: string } = {}):
         // — see install.ts.
         `\n${verdictLine}${installLine}${deniedBlock}${declinedBlock()}${pluginLine}`,
     );
-    logFind([], [...askable, ...denied].map(toDiscovered));
+    logFind([], [...[...askable, ...denied].map(toDiscovered), ...hidden]);
     return 0;
   } catch (err) {
     process.stderr.write(`[metaskill] find error: ${(err as Error).message}\n`);

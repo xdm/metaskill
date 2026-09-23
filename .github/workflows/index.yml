@@ -91,7 +91,14 @@ jobs:
               );
             }
 
-            if (fs.existsSync("previous/index.json")) {
+            // The gate shells out to dist/index-dedupe.js below; say so in a
+            // gate line if it is missing, instead of an ENOENT stack from
+            // execFileSync that names nothing.
+            if (!fs.existsSync("dist/index-dedupe.js")) {
+              failures.push("dist/index-dedupe.js is missing — the build step no longer bundles src/index/dedupe-cli.ts");
+            }
+
+            if (fs.existsSync("previous/index.json") && !failures.length) {
               // Like with like: the build dedupes (src/index/dedupe.ts), and
               // the published asset may predate that, so its count is taken
               // AFTER the same function — otherwise the first deduped build
@@ -106,7 +113,7 @@ jobs:
                   `skillCount ${cur.skillCount} is ${(ratio * 100).toFixed(1)}% of the published ${prevCount} after dedupe (< ${MIN_COUNT_RATIO * 100}%)`,
                 );
               }
-            } else {
+            } else if (!fs.existsSync("previous/index.json")) {
               console.log("no previous published index found — skipping the count-regression gate");
             }
 
