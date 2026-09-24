@@ -2069,6 +2069,19 @@ describe("packaged assets", () => {
     expect(md).not.toMatch(/`metaskill (install|update|log|init)\b/);
     expect(md).toContain("one");
   });
+
+  it("SKILL.md opens with the safety boundaries an auditor reads it for", () => {
+    // The skill's purpose is installing third-party skills, so a reader
+    // auditing it (skills.sh runs one automatically) looks for the limits
+    // first. They are all true of the code; this pins that the file says so
+    // up front rather than scattering them.
+    const md = fs.readFileSync(path.join(ROOT, "skills", "metaskill", "SKILL.md"), "utf8");
+    const safety = md.split("## Safety")[1]?.split("\n## ")[0] ?? "";
+    for (const promise of ["explicit yes", "allowlist", "scan", "`deny`", "lock"]) {
+      expect(safety, `Safety names: ${promise}`).toContain(promise);
+    }
+    expect(md.indexOf("## Safety")).toBeLessThan(md.indexOf('## On "Needs confirmation"'));
+  });
 });
 
 // A frontmatter `version` written as a YAML block scalar is folded faithfully

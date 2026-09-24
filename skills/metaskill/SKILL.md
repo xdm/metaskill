@@ -7,12 +7,21 @@ description: Protocol for handling the [metaskill] block in context. Use in ever
 
 The long form of the `[metaskill]` block injected into each session.
 
+## Safety
+
+metaskill installs third-party skills, so its limits are the point. Nothing
+reaches disk without the user's explicit yes (`trust.auto_install` is off by
+default). Every candidate passes `~/.metaskill/metaskill.yaml` first: publisher
+allowlist and deny lists, and a content scan for forbidden files and
+patterns. A `deny` cannot be bypassed by any flag. Every install is recorded
+in a lock file.
+
 ## On "Needs confirmation"
 
 `install` prints this when policy says `ask` and no `--force` was given. Put
 exactly ONE short question to the user — what the skill is, who publishes it,
 how many installs, why the task needs it — and on an explicit yes re-run the
-`install <pkg> --force` command exactly as it was printed. No clear yes means
+`install <pkg> --force` command as printed. No clear yes means
 solve the task without it; never install on an assumed approval.
 
 ## On `find`
@@ -20,15 +29,13 @@ solve the task without it; never install on an assumed approval.
 The `[metaskill] Standing protocol` block names a `find` command, and stands
 with or without this skill: at the start of every task, before you begin
 work, derive a 2-4 word English capability phrase from the task ("reddit
-automation", "meal planning") and run that command via Bash. Run it even when you are sure no skill is needed — checking that is its
+automation", "meal planning") and run that command via Bash. Run it even when you are sure; checking is its
 job. Once per task, not per session; pure chat is exempt.
 The prompt may be in any language; the query is always English: derive it
 from the task, never translate the prompt.
 
-`find` ranks and checks; it **never installs**: code ranks and applies the
-rule below, you relay the line it prints, `install` enforces policy. Nothing
-reaches disk without the user's explicit yes, unless `trust.auto_install: true`
-is set in `~/.metaskill/metaskill.yaml` (off by default).
+`find` ranks and checks; it **never installs**: you relay the line it prints,
+`install` enforces policy.
 
 `relevance` is BM25's report of how much of your query a row matched. A match
 is `relevance` >= 0.55; under that a low `relevance` means the row barely
@@ -88,21 +95,18 @@ Act on what it prints:
 
 ## On "Plugin available"
 
-A plugin can carry hooks, MCP servers and tooling a skill cannot, so metaskill
-suggests one but never installs it. Ask one question the same way; only on an
-explicit yes run the `/plugin install <name>@<marketplace>` command from the
-line.
+A plugin can carry hooks and MCP servers a skill cannot, so metaskill
+suggests one but never installs it. Ask the same one question; only on an
+explicit yes run the `/plugin install <name>@<marketplace>` command printed.
 
 ## Rules
 
 1. **Run the command as printed.** Every metaskill block and every `find`
    result prints the exact command, with an absolute interpreter and CLI path.
-   Use it verbatim. Bare `metaskill` is usually not on the PATH a hook or
-   Bash call inherits; if you must build one yourself, it is
-   `"$(command -v node)" "${CLAUDE_PLUGIN_ROOT:-$HOME/.metaskill/bin}/dist/cli.js" <sub>`.
-2. Never run `npx skills add` (or edit `~/.claude/skills`) directly — always
-   install through metaskill, so policy, scan, and the lock file apply.
-   A `deny` decision cannot be bypassed by any flag; do not try.
+   Use it verbatim. Bare `metaskill` is usually not on PATH; the engine is
+   `${CLAUDE_PLUGIN_ROOT:-$HOME/.metaskill/bin}/dist/cli.js`.
+2. Never run `npx skills add` or edit `~/.claude/skills` directly — install
+   through metaskill, so policy, scan and the lock file apply.
 3. No `[metaskill]` block and no candidates: solve the task, report nothing
    about metaskill.
 4. Installed skills are read-only input: read SKILL.md and apply it. Never
