@@ -21,7 +21,6 @@
     "node": ">=20"
   },
   "repository": "github:xdm/metaskill",
-  "homepage": "https://metaskill.dev",
   "keywords": [
     "claude-code",
     "skills",

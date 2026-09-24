@@ -1,7 +1,6 @@
 # metaskill
 
 [![npm](https://img.shields.io/npm/v/%40xdma%2Fmetaskill)](https://www.npmjs.com/package/@xdma/metaskill)
-[![skills.sh](https://skills.sh/b/xdm/metaskill)](https://skills.sh/xdm/metaskill)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 ![node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen)
 
@@ -32,14 +31,12 @@ security-review skill runs a checklist instead of vibes. That is why
 
 A skill only helps if it is installed before the task, and that step is
 manual: know a skill exists, search the registry, compare candidates, decide
-whom to trust, install, keep it updated. Nobody does this. People install two
-or three skills the week they discover the registry, then Claude goes back to
-improvising.
+whom to trust, install, keep it updated.
 
-metaskill does that step for you. At the start of every task it checks what
-is installed, ranks a local index of the registry, and hands Claude a
-shortlist with a policy verdict per candidate. Claude reads the top row and
-asks you before anything is installed.
+metaskill does that step. At the start of every task it checks what is
+installed, ranks a local index of the registry, and hands Claude a shortlist
+with a policy verdict per candidate. Claude reads the top row and asks you
+before anything is installed.
 
 ## What happens on a prompt
 
@@ -53,7 +50,16 @@ $ claude
 2. Claude derives a short capability phrase and runs
    `metaskill find "xlsx export formulas"`.
 3. `find` ranks the local index, keeps the top five, runs each past the
-   policy, and prints (three of the five rows shown):
+   policy, and prints the question and the two commands that follow it:
+
+```
+Ask the user: Install davila7/claude-code-templates@xlsx (957 installs, publisher davila7, scan clean) for this task? yes/no
+Install only on the user's explicit yes: "/Users/you/.nvm/versions/node/v24/bin/node" "/Users/you/.metaskill/bin/dist/cli.js" install davila7/claude-code-templates@xlsx --force --matched "xlsx export formulas"
+On no run: "/Users/you/.nvm/versions/node/v24/bin/node" "/Users/you/.metaskill/bin/dist/cli.js" decline davila7/claude-code-templates@xlsx --matched "xlsx export formulas"
+```
+
+<details>
+<summary>Full output (three of the five rows shown)</summary>
 
 ```
 [metaskill] Top matches for "xlsx export formulas" — find does not install. The line under the rows has applied these rules to the top row you could install: `Ask the user:` (relevance >= 0.55) — read that row's description; if it is a different thing with the same word, or has no description, say nothing and solve the task; otherwise ask that question FIRST, before any work; `Weak matches only` (under 0.55) — solve the task yourself, silently; `Policy allows this without asking` (you set `trust.auto_install`) — no question to put: read that row's description, then run the command that line names.
@@ -69,10 +75,11 @@ Install only on the user's explicit yes: "/Users/you/.nvm/versions/node/v24/bin/
 On no run: "/Users/you/.nvm/versions/node/v24/bin/node" "/Users/you/.metaskill/bin/dist/cli.js" decline davila7/claude-code-templates@xlsx --matched "xlsx export formulas"
 ```
 
+</details>
+
 4. `find` installs nothing. Each row shows the install count, the scan
    verdict, the relevance (how much of the query the row matched) and the
-   policy verdict. Every row here reads `needs your yes` because none of the
-   publishers is allowlisted.
+   policy verdict.
 5. The line under the rows is what Claude acts on. At relevance 0.55 and
    above a ready-made question prints, under a cue to read the row's
    description first: a rare word ranks its wrong sense just as high
@@ -133,8 +140,7 @@ What backs the table up:
   seen (`metaskill install <owner/repo@skill>` by hand) gets the same scan,
   live.
 - `deny` cannot be bypassed by any flag, on install, update or the daily
-  sync. If you already have `anthropics/skills@xlsx` installed, `update`
-  refuses it and says why, until the registry scans it clean.
+  sync.
 - The hook never runs skill code. It downloads, reads and greps. Skills run
   later, inside Claude, as if you had installed them by hand.
 - Every install is pinned in `~/.metaskill/skills-lock.json`. The one thing
@@ -155,23 +161,15 @@ What backs the table up:
 
 ## Where it helps
 
-| You type | Skill found | Instead of |
-|---|---|---|
-| "Export the numbers to .xlsx with formulas and conditional formatting" | `xlsx` | hand-rolled openpyxl code with broken styling |
-| "Pull the totals out of these 40 invoice PDFs" | `pdf` | fragile regex over `pdftotext` output |
-| "Turn these notes into a 10-slide investor deck" | `pptx` | an unreadable python-pptx improvisation |
-| "Draft the contract as .docx with our heading styles" | `docx` | markdown pasted into Word by hand |
-| "Scrape competitor prices into a table" | `scraping` | a crawler with no retries and instant 429s |
-| "Add Playwright tests for the checkout flow" | a Playwright test-authoring skill | selectors that break on the first re-render |
-| "Review the auth flow for SQLi and XSS before release" | `security-review` | a review with no checklist |
-| "Add meta tags and a sitemap, indexing looks broken" | `seo` | outdated SEO advice |
-| "Containerize this app properly" | `docker` | a single-stage 2GB image running as root |
-| "Pull the deals out of our CRM" | your company's private skill, via a policy override | Claude guessing a vendor's REST API |
+Three prompts and the top row `find` returns for them today:
 
-On a fresh laptop or for a new teammate, the first week of real prompts
-surfaces the same checked shortlist for everyone, because the policy decides
-what is offered. If no skill fits, Claude solves the task and the gap is
-logged.
+| You type | Top row |
+|---|---|
+| "Export the numbers to .xlsx with formulas and conditional formatting" | `davila7/claude-code-templates@xlsx` (957 installs) |
+| "Add Playwright tests for the checkout flow" | `microsoft/playwright-cli@playwright-cli` (163,199 installs) |
+| "Add meta tags and a sitemap, indexing looks broken" | `addyosmani/web-quality-skills@seo` (46,838 installs) |
+
+If no skill fits, Claude solves the task and the gap is logged.
 
 ## Install
 
@@ -240,18 +238,18 @@ session).
 
 ```
 $ metaskill list
-SKILL  PACKAGE                                 VERSION  MATCHED  INSTALLED   STATUS
-xlsx   anthropics/claude-agent-sdk-demos@xlsx  v1.2.3   -        2026-09-02  ok
+SKILL         PACKAGE                                     VERSION  MATCHED             INSTALLED   STATUS
+reddit-posts  kostja94/marketing-skills@reddit-posts      -        reddit launch post  2026-09-08  ok
+postgres      planetscale/database-skills@postgres        -        postgres            2026-09-02  ok
 
-$ metaskill log -n 3
-2026-09-02T15:37:28.040Z domains=[] 3ms
-2026-09-02T15:37:28.608Z domains=[find:xlsx export formulas] 517ms
-2026-09-02T15:37:29.296Z domains=[find:scraping] 606ms
+$ metaskill log -n 2
+2026-09-24T12:35:05.260Z domains=[] 3ms
+2026-09-24T12:30:46.108Z domains=[find:image generation svg png assets] ask:vercel-labs/json-render@image(1429,scan=clean) ...
 ```
 
-MATCHED is the phrase that found a skill; a package you named by hand has
-none. The first log line is a prompt (`route` records only that one
-happened), the other two are lookups. `metaskill log --stats` prints the
+MATCHED is the phrase that found the skill. A log line with `domains=[]` is
+a prompt (`route` records only that one happened); a `find:` line is a
+lookup, followed by the rows it found. `metaskill log --stats` prints the
 share of prompts followed by a lookup and the number of questions answered
 (installs plus declines).
 
