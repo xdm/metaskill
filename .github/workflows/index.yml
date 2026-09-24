@@ -132,3 +132,9 @@ jobs:
           gh release view index-latest >/dev/null 2>&1 \
             || gh release create index-latest --title "Registry index" --notes "Rebuilt daily. Consumed by metaskill sync."
           gh release upload index-latest index.json --clobber
+          # The release page also lists "Source code" archives for the tag the
+          # release points at. `--clobber` moves only the asset, so the tag
+          # stayed on the commit of the first publish; move it with the asset
+          # so those archives (and the "last month" beside them) match today.
+          git tag -f index-latest "$GITHUB_SHA"
+          git push -f origin refs/tags/index-latest
