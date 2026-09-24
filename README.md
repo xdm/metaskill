@@ -253,8 +253,8 @@ lookup, followed by the rows it found. `metaskill log --stats` prints the
 share of prompts followed by a lookup and the number of questions answered
 (installs plus declines).
 
-The index: the npm package ships a snapshot of the 4,282 skills with a real
-install count (2.3 MB), enough to look things up offline right after
+The index: the npm package ships a snapshot of the 13,048 skills with a real
+install count (6.9 MB), enough to look things up offline right after
 install. `sync` upgrades it to the full index, currently 33,413 skills across
 785 repositories, from a nightly GitHub Release, at most once a day; the
 download is about 24 MB with a 45-second budget, and a failed refresh keeps
