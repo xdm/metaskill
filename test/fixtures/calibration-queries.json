@@ -4,42 +4,42 @@
     {
       "query": "content marketing article writing",
       "deserves": true,
-      "relevance": 0.85,
-      "pkg": "affaan-m/ecc@article-writing",
+      "relevance": 0.89,
+      "pkg": "kostja94/marketing-skills@article-content",
       "outcome": "ask",
-      "asked": "affaan-m/ecc@article-writing"
+      "asked": "kostja94/marketing-skills@article-content"
     },
     {
       "query": "linkedin content writing proptech",
       "deserves": true,
-      "relevance": 0.56,
-      "pkg": "samber/cc-skills@linkedin-ghostwriting",
+      "relevance": 0.74,
+      "pkg": "jamesgray007/hoai-course@writing-linkedin-posts",
       "outcome": "ask",
-      "asked": "samber/cc-skills@linkedin-ghostwriting"
+      "asked": "jamesgray007/hoai-course@writing-linkedin-posts"
     },
     {
       "query": "seo blog article writing",
       "deserves": true,
-      "relevance": 0.74,
-      "pkg": "affaan-m/ecc@article-writing",
+      "relevance": 1.25,
+      "pkg": "openclaudia/openclaudia-skills@write-blog",
       "outcome": "ask",
-      "asked": "affaan-m/ecc@article-writing"
+      "asked": "openclaudia/openclaudia-skills@write-blog"
     },
     {
       "query": "linkedin outreach prospecting",
       "deserves": true,
-      "relevance": 0.66,
-      "pkg": "code.deepline.com@portfolio-prospecting",
+      "relevance": 1.18,
+      "pkg": "jk-0001/skills@outreach-and-prospecting",
       "outcome": "ask",
-      "asked": "coreyhaines31/marketingskills@cold-email"
+      "asked": "louisblythe/sales-skills@email-sequence"
     },
     {
       "query": "real estate feed api",
       "deserves": false,
-      "relevance": 0.44,
-      "pkg": "larksuite/cli@lark-im",
-      "outcome": "silent",
-      "asked": null
+      "relevance": 0.6,
+      "pkg": "samuraigpt/generative-media-skills@muapi-brochures",
+      "outcome": "ask",
+      "asked": "samuraigpt/generative-media-skills@muapi-brochures"
     }
   ]
 }
